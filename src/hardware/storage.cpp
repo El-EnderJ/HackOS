@@ -2,6 +2,7 @@
 
 #include <SD.h>
 #include <SPI.h>
+#include <cstring>
 
 #include "config.h"
 
@@ -58,4 +59,96 @@ bool StorageManager::isMounted() const
 const char *StorageManager::lastError() const
 {
     return lastError_;
+}
+
+size_t StorageManager::listDir(const char *path, DirEntry *entries, size_t maxEntries)
+{
+    if (!mounted_ || path == nullptr || entries == nullptr || maxEntries == 0U)
+    {
+        return 0U;
+    }
+
+    File dir = SD.open(path);
+    if (!dir || !dir.isDirectory())
+    {
+        if (dir)
+        {
+            dir.close();
+        }
+        lastError_ = "Not a directory";
+        return 0U;
+    }
+
+    size_t count = 0U;
+    while (count < maxEntries)
+    {
+        File entry = dir.openNextFile();
+        if (!entry)
+        {
+            break;
+        }
+        const char *entryName = entry.name();
+        std::strncpy(entries[count].name, entryName, sizeof(entries[count].name) - 1U);
+        entries[count].name[sizeof(entries[count].name) - 1U] = '\0';
+        entries[count].isDir = entry.isDirectory();
+        entries[count].size = entry.isDirectory() ? 0U : static_cast<uint32_t>(entry.size());
+        entry.close();
+        ++count;
+    }
+    dir.close();
+    return count;
+}
+
+bool StorageManager::writeFile(const char *path, const uint8_t *data, size_t len)
+{
+    if (!mounted_ || path == nullptr || (data == nullptr && len > 0U))
+    {
+        lastError_ = "writeFile: bad args";
+        return false;
+    }
+
+    File f = SD.open(path, FILE_WRITE);
+    if (!f)
+    {
+        lastError_ = "writeFile: open failed";
+        return false;
+    }
+
+    const size_t written = (len > 0U) ? f.write(data, len) : 0U;
+    f.close();
+
+    if (written != len)
+    {
+        lastError_ = "writeFile: short write";
+        return false;
+    }
+    lastError_ = "OK";
+    return true;
+}
+
+bool StorageManager::appendChunk(const char *path, const uint8_t *data, size_t len)
+{
+    if (!mounted_ || path == nullptr || data == nullptr || len == 0U)
+    {
+        lastError_ = "appendChunk: bad args";
+        return false;
+    }
+
+    File f = SD.open(path, FILE_APPEND);
+    if (!f)
+    {
+        lastError_ = "appendChunk: open failed";
+        return false;
+    }
+
+    const size_t written = f.write(data, len);
+    f.close();
+
+    if (written != len)
+    {
+        lastError_ = "appendChunk: short write";
+        return false;
+    }
+    lastError_ = "OK";
+    return true;
 }
