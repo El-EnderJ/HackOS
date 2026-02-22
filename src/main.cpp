@@ -13,15 +13,20 @@
  */
 
 #include <Arduino.h>
+#include <esp_log.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
 #include "config.h"
+#include "hardware/display.h"
+#include "hardware/input.h"
+#include "hardware/storage.h"
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 /// @brief Serial baud rate – must match the `monitor_speed` in platformio.ini.
 static constexpr uint32_t SERIAL_BAUD = 115200UL;
+static constexpr const char *TAG = "HackOS";
 
 /// @brief Main-loop idle period expressed in FreeRTOS ticks (10 ms).
 static constexpr TickType_t LOOP_DELAY_TICKS = pdMS_TO_TICKS(10U);
@@ -37,7 +42,28 @@ static constexpr TickType_t LOOP_DELAY_TICKS = pdMS_TO_TICKS(10U);
 void setup()
 {
     Serial.begin(SERIAL_BAUD);
-    Serial.println(F("[HackOS] Boot – phase 1 scaffolding OK"));
+    esp_log_level_set(TAG, ESP_LOG_DEBUG);
+    ESP_LOGI(TAG, "Booting HackOS phase 2 HAL");
+
+    const bool displayOk = DisplayManager::instance().init();
+    const bool inputOk = InputManager::instance().init();
+    const bool storageOk = StorageManager::instance().mount();
+    ESP_LOGD(TAG, "HAL instances acquired and initialized");
+
+    ESP_LOGI(TAG, "DisplayManager init: %s", displayOk ? "OK" : "FAIL");
+    ESP_LOGI(TAG, "InputManager init: %s", inputOk ? "OK" : "FAIL");
+    ESP_LOGI(TAG, "StorageManager mount: %s (%s)", storageOk ? "OK" : "FAIL", StorageManager::instance().lastError());
+
+    DisplayManager::instance().clear();
+    DisplayManager::instance().drawText(0, 0, "HackOS HAL Ready");
+    DisplayManager::instance().drawLine(0, 10, 127, 10);
+    DisplayManager::instance().present();
+
+    const uint32_t heapSize = ESP.getHeapSize();
+    const uint32_t freeHeap = ESP.getFreeHeap();
+    const uint32_t usedPercent = (heapSize > 0U) ? ((heapSize - freeHeap) * 100U) / heapSize : 0U;
+    ESP_LOGI(TAG, "RAM usage: %lu%% (free=%lu, total=%lu)", static_cast<unsigned long>(usedPercent),
+             static_cast<unsigned long>(freeHeap), static_cast<unsigned long>(heapSize));
 }
 
 /**
@@ -48,5 +74,7 @@ void setup()
  */
 void loop()
 {
+    DisplayManager::instance().present();
+    (void)InputManager::instance().readInput();
     vTaskDelay(LOOP_DELAY_TICKS);
 }
