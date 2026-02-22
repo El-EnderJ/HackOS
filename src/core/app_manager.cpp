@@ -86,7 +86,7 @@ void AppManager::onEvent(Event *event)
         activeApp_->onEvent(event);
     }
 
-    if (event != nullptr && event->type == EventType::EVT_SYSTEM && event->arg0 == 1)
+    if (event != nullptr && event->type == EventType::EVT_SYSTEM && event->arg0 == SYSTEM_EVENT_BACK)
     {
         if (StateMachine::instance().currentState() == GlobalState::APP_RUNNING)
         {

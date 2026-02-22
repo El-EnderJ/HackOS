@@ -17,3 +17,8 @@ struct Event
     int32_t arg1;
     void *data;
 };
+
+enum : int32_t
+{
+    SYSTEM_EVENT_BACK = 1,
+};

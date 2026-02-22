@@ -60,7 +60,7 @@ public:
 
         if (event->arg0 == static_cast<int32_t>(InputManager::InputEvent::BUTTON_PRESS))
         {
-            Event backEvent{EventType::EVT_SYSTEM, 1, 0, nullptr};
+            Event backEvent{EventType::EVT_SYSTEM, SYSTEM_EVENT_BACK, 0, nullptr};
             (void)EventSystem::instance().postEvent(backEvent);
         }
     }
