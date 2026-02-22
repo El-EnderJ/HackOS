@@ -14,7 +14,8 @@ AppManager &AppManager::instance()
 AppManager::AppManager()
     : apps_{},
       appCount_(0U),
-      activeApp_(nullptr)
+      activeApp_(nullptr),
+      lastDrawMs_(0U)
 {
 }
 
@@ -54,6 +55,7 @@ bool AppManager::launchApp(const char *name)
             }
             activeApp_->onSetup();
             (void)StateMachine::instance().pushState(GlobalState::APP_RUNNING);
+            lastDrawMs_ = 0U;
             return true;
         }
     }
@@ -63,6 +65,7 @@ bool AppManager::launchApp(const char *name)
 
 void AppManager::loop()
 {
+    static constexpr uint32_t FRAME_INTERVAL_MS = 33U;
     const InputManager::InputEvent input = InputManager::instance().readInput();
     if (input != InputManager::InputEvent::CENTER)
     {
@@ -76,16 +79,31 @@ void AppManager::loop()
     }
 
     activeApp_->onLoop();
-    activeApp_->onDraw();
+    const uint32_t now = millis();
+    if ((now - lastDrawMs_) >= FRAME_INTERVAL_MS)
+    {
+        activeApp_->onDraw();
+        lastDrawMs_ = now;
+    }
+}
+
+size_t AppManager::appCount() const
+{
+    return appCount_;
+}
+
+const char *AppManager::appNameAt(size_t index) const
+{
+    if (index >= appCount_)
+    {
+        return nullptr;
+    }
+
+    return apps_[index].name;
 }
 
 void AppManager::onEvent(Event *event)
 {
-    if (activeApp_ != nullptr)
-    {
-        activeApp_->onEvent(event);
-    }
-
     if (event != nullptr && event->type == EventType::EVT_SYSTEM && event->arg0 == SYSTEM_EVENT_BACK)
     {
         if (StateMachine::instance().currentState() == GlobalState::APP_RUNNING)

@@ -14,6 +14,8 @@ public:
     void clear();
     void drawPixel(int16_t x, int16_t y, uint16_t color = SSD1306_WHITE);
     void drawLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint16_t color = SSD1306_WHITE);
+    void drawRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t color = SSD1306_WHITE);
+    void fillRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t color = SSD1306_WHITE);
     void drawText(int16_t x, int16_t y, const char *text, uint8_t textSize = 1U, uint16_t color = SSD1306_WHITE);
     void present();
     bool isInitialized() const;

@@ -18,6 +18,7 @@
 #include <freertos/task.h>
 
 #include "apps/app_base.h"
+#include "apps/launcher_app.h"
 #include "config.h"
 #include "core/app_manager.h"
 #include "core/event_system.h"
@@ -34,45 +35,6 @@ static constexpr const char *TAG = "HackOS";
 
 /// @brief Main-loop idle period expressed in FreeRTOS ticks (10 ms).
 static constexpr TickType_t LOOP_DELAY_TICKS = pdMS_TO_TICKS(10U);
-
-namespace
-{
-class LauncherApp final : public AppBase
-{
-public:
-    void onSetup() override {}
-    void onLoop() override {}
-
-    void onDraw() override
-    {
-        DisplayManager::instance().clear();
-        DisplayManager::instance().drawText(0, 0, "Launcher");
-        DisplayManager::instance().drawLine(0, 10, 127, 10);
-        DisplayManager::instance().present();
-    }
-
-    void onEvent(Event *event) override
-    {
-        if (event == nullptr || event->type != EventType::EVT_INPUT)
-        {
-            return;
-        }
-
-        if (event->arg0 == static_cast<int32_t>(InputManager::InputEvent::BUTTON_PRESS))
-        {
-            Event backEvent{EventType::EVT_SYSTEM, SYSTEM_EVENT_BACK, 0, nullptr};
-            (void)EventSystem::instance().postEvent(backEvent);
-        }
-    }
-
-    void onDestroy() override {}
-};
-
-AppBase *createLauncherApp()
-{
-    return new LauncherApp();
-}
-} // namespace
 
 // ── Arduino lifecycle ─────────────────────────────────────────────────────────
 
