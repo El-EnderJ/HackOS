@@ -13,18 +13,66 @@
  */
 
 #include <Arduino.h>
+#include <esp_log.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
+#include "apps/app_base.h"
 #include "config.h"
+#include "core/app_manager.h"
+#include "core/event_system.h"
+#include "core/state_machine.h"
+#include "hardware/display.h"
+#include "hardware/input.h"
+#include "hardware/storage.h"
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 /// @brief Serial baud rate – must match the `monitor_speed` in platformio.ini.
 static constexpr uint32_t SERIAL_BAUD = 115200UL;
+static constexpr const char *TAG = "HackOS";
 
 /// @brief Main-loop idle period expressed in FreeRTOS ticks (10 ms).
 static constexpr TickType_t LOOP_DELAY_TICKS = pdMS_TO_TICKS(10U);
+
+namespace
+{
+class LauncherApp final : public AppBase
+{
+public:
+    void onSetup() override {}
+    void onLoop() override {}
+
+    void onDraw() override
+    {
+        DisplayManager::instance().clear();
+        DisplayManager::instance().drawText(0, 0, "Launcher");
+        DisplayManager::instance().drawLine(0, 10, 127, 10);
+        DisplayManager::instance().present();
+    }
+
+    void onEvent(Event *event) override
+    {
+        if (event == nullptr || event->type != EventType::EVT_INPUT)
+        {
+            return;
+        }
+
+        if (event->arg0 == static_cast<int32_t>(InputManager::InputEvent::BUTTON_PRESS))
+        {
+            Event backEvent{EventType::EVT_SYSTEM, SYSTEM_EVENT_BACK, 0, nullptr};
+            (void)EventSystem::instance().postEvent(backEvent);
+        }
+    }
+
+    void onDestroy() override {}
+};
+
+AppBase *createLauncherApp()
+{
+    return new LauncherApp();
+}
+} // namespace
 
 // ── Arduino lifecycle ─────────────────────────────────────────────────────────
 
@@ -37,7 +85,37 @@ static constexpr TickType_t LOOP_DELAY_TICKS = pdMS_TO_TICKS(10U);
 void setup()
 {
     Serial.begin(SERIAL_BAUD);
-    Serial.println(F("[HackOS] Boot – phase 1 scaffolding OK"));
+    esp_log_level_set(TAG, ESP_LOG_DEBUG);
+    ESP_LOGI(TAG, "Booting HackOS phase 2 HAL");
+
+    const bool displayOk = DisplayManager::instance().init();
+    const bool inputOk = InputManager::instance().init();
+    const bool storageOk = StorageManager::instance().mount();
+    const bool eventSystemOk = EventSystem::instance().init();
+    const bool appManagerOk = AppManager::instance().init();
+    ESP_LOGD(TAG, "HAL instances acquired and initialized");
+
+    ESP_LOGI(TAG, "DisplayManager init: %s", displayOk ? "OK" : "FAIL");
+    ESP_LOGI(TAG, "InputManager init: %s", inputOk ? "OK" : "FAIL");
+    ESP_LOGI(TAG, "StorageManager mount: %s (%s)", storageOk ? "OK" : "FAIL", StorageManager::instance().lastError());
+    ESP_LOGI(TAG, "EventSystem init: %s", eventSystemOk ? "OK" : "FAIL");
+    ESP_LOGI(TAG, "AppManager init: %s", appManagerOk ? "OK" : "FAIL");
+
+    StateMachine::instance().init(GlobalState::BOOT);
+    (void)StateMachine::instance().pushState(GlobalState::SPLASH);
+    (void)StateMachine::instance().pushState(GlobalState::LAUNCHER);
+    ESP_LOGI(TAG, "StateMachine state: %d", static_cast<int>(StateMachine::instance().currentState()));
+
+    (void)AppManager::instance().registerApp("launcher", createLauncherApp);
+    (void)AppManager::instance().launchApp("launcher");
+
+    const uint32_t heapSize = ESP.getHeapSize();
+    const uint32_t freeHeap = ESP.getFreeHeap();
+    const uint32_t usedPercent = (heapSize > 0U)
+                                     ? static_cast<uint32_t>((static_cast<uint64_t>(heapSize - freeHeap) * 100ULL) / heapSize)
+                                     : 0U;
+    ESP_LOGI(TAG, "RAM usage: %lu%% (free=%lu, total=%lu)", static_cast<unsigned long>(usedPercent),
+             static_cast<unsigned long>(freeHeap), static_cast<unsigned long>(heapSize));
 }
 
 /**
@@ -48,5 +126,7 @@ void setup()
  */
 void loop()
 {
+    EventSystem::instance().dispatchPendingEvents();
+    AppManager::instance().loop();
     vTaskDelay(LOOP_DELAY_TICKS);
 }
