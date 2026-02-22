@@ -65,6 +65,7 @@ bool AppManager::launchApp(const char *name)
 
 void AppManager::loop()
 {
+    // 33 ms keeps UI refresh around 30 FPS, a good tradeoff for OLED I2C bandwidth.
     static constexpr uint32_t FRAME_INTERVAL_MS = 33U;
     const InputManager::InputEvent input = InputManager::instance().readInput();
     if (input != InputManager::InputEvent::CENTER)
@@ -104,6 +105,11 @@ const char *AppManager::appNameAt(size_t index) const
 
 void AppManager::onEvent(Event *event)
 {
+    if (activeApp_ != nullptr && (event == nullptr || event->type != EventType::EVT_INPUT))
+    {
+        activeApp_->onEvent(event);
+    }
+
     if (event != nullptr && event->type == EventType::EVT_SYSTEM && event->arg0 == SYSTEM_EVENT_BACK)
     {
         if (StateMachine::instance().currentState() == GlobalState::APP_RUNNING)

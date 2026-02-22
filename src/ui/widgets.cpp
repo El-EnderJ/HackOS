@@ -5,6 +5,12 @@
 
 #include "hardware/display.h"
 
+namespace
+{
+constexpr size_t MENU_LINE_BUFFER = 24U;
+constexpr size_t STATUS_LINE_BUFFER = 32U;
+} // namespace
+
 MenuListView::MenuListView(int16_t x, int16_t y, int16_t width, int16_t height, uint8_t visibleRows)
     : Widget(x, y, width, height),
       items_(nullptr),
@@ -68,7 +74,7 @@ void MenuListView::draw()
         return;
     }
 
-    char line[24];
+    char line[MENU_LINE_BUFFER];
     for (uint8_t row = 0U; row < visibleRows_; ++row)
     {
         const size_t index = firstVisible_ + row;
@@ -130,7 +136,7 @@ void StatusBar::setTime(uint8_t hours, uint8_t minutes)
 
 void StatusBar::draw()
 {
-    char statusLine[32];
+    char statusLine[STATUS_LINE_BUFFER];
     std::snprintf(statusLine, sizeof(statusLine), "%s %s %02u:%02u", sdMounted_ ? "SD" : "--", wifiConnected_ ? "WF" : "--",
                   static_cast<unsigned>(hours_), static_cast<unsigned>(minutes_));
     DisplayManager::instance().drawText(x_, y_, statusLine);

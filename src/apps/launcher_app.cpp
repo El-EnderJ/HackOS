@@ -16,7 +16,7 @@ public:
           menu_(0, 12, 128, 40, 4),
           progressBar_(0, 54, 128, 10),
           dialog_(14, 16, 100, 30),
-          appNames_{nullptr},
+          appNames_{},
           appCount_(0U)
     {
     }
@@ -80,14 +80,7 @@ public:
             dialog_.setVisible(!dialog_.isVisible());
         }
 
-        if (menu_.itemCount() > 1U)
-        {
-            progressBar_.setProgress(static_cast<uint8_t>((menu_.selectedIndex() * 100U) / (menu_.itemCount() - 1U)));
-        }
-        else
-        {
-            progressBar_.setProgress(0U);
-        }
+        updateProgressIndicator();
     }
 
     void onDestroy() override
@@ -103,6 +96,19 @@ private:
     DialogBox dialog_;
     const char *appNames_[MAX_APPS];
     size_t appCount_;
+
+    void updateProgressIndicator()
+    {
+        if (menu_.itemCount() > 1U)
+        {
+            progressBar_.setProgress(static_cast<uint8_t>(
+                (menu_.selectedIndex() * 100U + (menu_.itemCount() - 1U) / 2U) / (menu_.itemCount() - 1U)));
+        }
+        else
+        {
+            progressBar_.setProgress(0U);
+        }
+    }
 };
 } // namespace
 
