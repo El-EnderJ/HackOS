@@ -10,6 +10,7 @@
 #include "hardware/display.h"
 #include "hardware/input.h"
 #include "hardware/nfc_reader.h"
+#include "hardware/storage.h"
 #include "ui/widgets.h"
 
 static constexpr const char *TAG_NFC_APP = "NFCToolsApp";
@@ -25,8 +26,8 @@ enum class NFCState : uint8_t
     DUMP_DONE,
 };
 
-static constexpr size_t NFC_MENU_COUNT = 3U;
-static const char *const NFC_MENU_LABELS[NFC_MENU_COUNT] = {"Read UID", "Dump Mifare", "Back"};
+static constexpr size_t NFC_MENU_COUNT = 4U;
+static const char *const NFC_MENU_LABELS[NFC_MENU_COUNT] = {"Read UID", "Dump Mifare", "Save UID", "Back"};
 
 class NFCToolsApp final : public AppBase, public IEventObserver
 {
@@ -358,11 +359,54 @@ private:
                     needsRedraw_ = true;
                 }
             }
+            else if (sel == 2U) // Save UID
+            {
+                saveUidToSd();
+            }
             else // Back
             {
                 const Event evt{EventType::EVT_SYSTEM, SYSTEM_EVENT_BACK, 0, nullptr};
                 EventSystem::instance().postEvent(evt);
             }
+        }
+    }
+
+    void saveUidToSd()
+    {
+        if (uidLen_ == 0U)
+        {
+            ESP_LOGW(TAG_NFC_APP, "saveUidToSd: no UID");
+            return;
+        }
+        if (!StorageManager::instance().isMounted())
+        {
+            ESP_LOGW(TAG_NFC_APP, "saveUidToSd: SD not mounted");
+            return;
+        }
+
+        // Build "XX:XX:XX:XX" string then write to SD
+        char hexUID[22] = {};
+        size_t pos = 0U;
+        for (uint8_t i = 0U; i < uidLen_ && i < UID_BUF_LEN; ++i)
+        {
+            const int written = std::snprintf(hexUID + pos, sizeof(hexUID) - pos,
+                                              i > 0U ? ":%02X" : "%02X",
+                                              static_cast<unsigned>(uid_[i]));
+            if (written > 0 && static_cast<size_t>(written) < sizeof(hexUID) - pos)
+            {
+                pos += static_cast<size_t>(written);
+            }
+        }
+
+        char line[32];
+        const int len = std::snprintf(line, sizeof(line), "UID: %s\n", hexUID);
+        if (len > 0 && len < static_cast<int>(sizeof(line)))
+        {
+            const bool ok = StorageManager::instance().appendChunk(
+                "/captures/nfc_uid.txt",
+                reinterpret_cast<const uint8_t *>(line),
+                static_cast<size_t>(len));
+            ESP_LOGI(TAG_NFC_APP, "saveUidToSd: %s", ok ? "OK" : "FAIL");
         }
     }
 };

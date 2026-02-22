@@ -9,6 +9,7 @@
 #include "core/event_system.h"
 #include "hardware/display.h"
 #include "hardware/input.h"
+#include "hardware/storage.h"
 #include "hardware/wireless.h"
 #include "ui/widgets.h"
 
@@ -33,8 +34,8 @@ enum class WiFiState : uint8_t
 static constexpr size_t MAIN_MENU_COUNT = 2U;
 static const char *const MAIN_MENU_LABELS[MAIN_MENU_COUNT] = {"Scan Networks", "Back"};
 
-static constexpr size_t ATTACK_MENU_COUNT = 3U;
-static const char *const ATTACK_MENU_LABELS[ATTACK_MENU_COUNT] = {"Deauth", "Evil Twin", "Info"};
+static constexpr size_t ATTACK_MENU_COUNT = 4U;
+static const char *const ATTACK_MENU_LABELS[ATTACK_MENU_COUNT] = {"Deauth", "Evil Twin", "Info", "Save AP"};
 
 // ── App class ─────────────────────────────────────────────────────────────────
 
@@ -448,6 +449,10 @@ private:
             transitionTo(WiFiState::ATTACK_MENU);
             break;
         }
+        case 3U: // Save AP
+            saveApToSd();
+            transitionTo(WiFiState::ATTACK_MENU);
+            break;
         default:
             break;
         }
@@ -473,6 +478,44 @@ private:
         {
             ++deauthCount_;
             needsRedraw_ = true;
+        }
+    }
+
+    // ── Save AP to SD ─────────────────────────────────────────────────────────
+
+    void saveApToSd()
+    {
+        const Wireless::ApRecord *aps = Wireless::instance().aps();
+        if (aps == nullptr || selectedApIndex_ >= apCount_)
+        {
+            ESP_LOGW(TAG_WIFI, "saveApToSd: no AP selected");
+            return;
+        }
+        if (!StorageManager::instance().isMounted())
+        {
+            ESP_LOGW(TAG_WIFI, "saveApToSd: SD not mounted");
+            return;
+        }
+
+        const Wireless::ApRecord &ap = aps[selectedApIndex_];
+        char buf[128];
+        const int len = std::snprintf(buf, sizeof(buf),
+            "SSID: %s\nBSSID: %02X:%02X:%02X:%02X:%02X:%02X\n"
+            "RSSI: %d dBm\nChannel: %u\nAuth: %u\n",
+            ap.ssid[0] != '\0' ? ap.ssid : "[hidden]",
+            ap.bssid[0], ap.bssid[1], ap.bssid[2],
+            ap.bssid[3], ap.bssid[4], ap.bssid[5],
+            static_cast<int>(ap.rssi),
+            static_cast<unsigned>(ap.channel),
+            static_cast<unsigned>(ap.authmode));
+
+        if (len > 0 && len < static_cast<int>(sizeof(buf)))
+        {
+            const bool ok = StorageManager::instance().appendChunk(
+                "/captures/wifi_scan.txt",
+                reinterpret_cast<const uint8_t *>(buf),
+                static_cast<size_t>(len));
+            ESP_LOGI(TAG_WIFI, "saveApToSd: %s", ok ? "OK" : "FAIL");
         }
     }
 };

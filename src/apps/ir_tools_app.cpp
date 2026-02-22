@@ -10,6 +10,7 @@
 #include "hardware/display.h"
 #include "hardware/input.h"
 #include "hardware/ir_transceiver.h"
+#include "hardware/storage.h"
 #include "ui/widgets.h"
 
 static constexpr const char *TAG_IR_APP = "IRToolsApp";
@@ -24,8 +25,8 @@ enum class IRState : uint8_t
     CLONER,
 };
 
-static constexpr size_t IR_MENU_COUNT = 3U;
-static const char *const IR_MENU_LABELS[IR_MENU_COUNT] = {"IR Sniffer", "IR Cloner", "Back"};
+static constexpr size_t IR_MENU_COUNT = 4U;
+static const char *const IR_MENU_LABELS[IR_MENU_COUNT] = {"IR Sniffer", "IR Cloner", "Save Code", "Back"};
 
 class IRToolsApp final : public AppBase, public IEventObserver
 {
@@ -251,11 +252,45 @@ private:
                 clonerSent_ = false;
                 transitionTo(IRState::CLONER);
             }
+            else if (sel == 2U) // Save Code
+            {
+                saveIrCodeToSd();
+            }
             else // Back
             {
                 const Event evt{EventType::EVT_SYSTEM, SYSTEM_EVENT_BACK, 0, nullptr};
                 EventSystem::instance().postEvent(evt);
             }
+        }
+    }
+
+    void saveIrCodeToSd()
+    {
+        if (!IRTransceiver::instance().hasLastCode())
+        {
+            ESP_LOGW(TAG_IR_APP, "saveIrCodeToSd: no code captured");
+            return;
+        }
+        if (!StorageManager::instance().isMounted())
+        {
+            ESP_LOGW(TAG_IR_APP, "saveIrCodeToSd: SD not mounted");
+            return;
+        }
+
+        char buf[64];
+        const int len = std::snprintf(buf, sizeof(buf),
+            "Proto: %s\nCode: %s\nBits: %u\n",
+            protoName_,
+            codeHex_,
+            static_cast<unsigned>(IRTransceiver::instance().lastBits()));
+
+        if (len > 0 && len < static_cast<int>(sizeof(buf)))
+        {
+            const bool ok = StorageManager::instance().appendChunk(
+                "/captures/ir_codes.txt",
+                reinterpret_cast<const uint8_t *>(buf),
+                static_cast<size_t>(len));
+            ESP_LOGI(TAG_IR_APP, "saveIrCodeToSd: %s", ok ? "OK" : "FAIL");
         }
     }
 };
