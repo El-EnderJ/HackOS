@@ -19,6 +19,7 @@
 
 #include "apps/app_base.h"
 #include "apps/launcher_app.h"
+#include "apps/wifi_tools_app.h"
 #include "config.h"
 #include "core/app_manager.h"
 #include "core/event_system.h"
@@ -69,6 +70,7 @@ void setup()
     ESP_LOGI(TAG, "StateMachine state: %d", static_cast<int>(StateMachine::instance().currentState()));
 
     (void)AppManager::instance().registerApp("launcher", createLauncherApp);
+    (void)AppManager::instance().registerApp("wifi_tools", createWifiToolsApp);
     (void)AppManager::instance().launchApp("launcher");
 
     const uint32_t heapSize = ESP.getHeapSize();
