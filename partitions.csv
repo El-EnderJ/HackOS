@@ -1,0 +1,22 @@
+# Partition table for HackOS – ESP32 4 MB Flash
+#
+# @file partitions.csv
+# @brief Custom partition layout enabling dual-OTA updates.
+#
+# Flash chip: 4 MB (0x400000).  The first 36 KB (0x0000–0x8FFF) is reserved
+# for the ESP32 second-stage bootloader and partition-table sectors; the
+# entries below cover the remaining addressable space.
+#
+#   - nvs      :  20 KB  – Non-volatile storage (Wi-Fi credentials, settings)
+#   - otadata  :   8 KB  – OTA selection metadata
+#   - app0     : 1.5 MB  – OTA slot A (active firmware)
+#   - app1     : 1.5 MB  – OTA slot B (pending firmware)
+#   - spiffs   : 960 KB  – LittleFS/SPIFFS user data (data/ directory)
+#
+# Column order: Name, Type, SubType, Offset, Size, Flags
+# Name,   Type, SubType,  Offset,   Size,  Flags
+nvs,      data, nvs,      0x9000,   0x5000,
+otadata,  data, ota,      0xe000,   0x2000,
+app0,     app,  ota_0,    0x10000,  0x180000,
+app1,     app,  ota_1,    0x190000, 0x180000,
+spiffs,   data, spiffs,   0x310000, 0xF0000,
