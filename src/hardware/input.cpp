@@ -8,6 +8,8 @@ constexpr uint16_t ADC_MAX = 4095U;
 constexpr uint16_t DEADZONE = 600U;
 constexpr uint32_t BUTTON_DEBOUNCE_MS = 50U;
 constexpr TickType_t BUTTON_TASK_DELAY = pdMS_TO_TICKS(10U);
+constexpr uint32_t BUTTON_TASK_STACK_SIZE = 2048U;
+constexpr UBaseType_t BUTTON_TASK_PRIORITY = 1U;
 } // namespace
 
 InputManager &InputManager::instance()
@@ -18,7 +20,7 @@ InputManager &InputManager::instance()
 
 InputManager::InputManager()
     : buttonTaskHandle_(nullptr),
-      buttonPressedEvent_(false)
+      buttonEventQueue_(nullptr)
 {
 }
 
@@ -28,9 +30,18 @@ bool InputManager::init()
     pinMode(PIN_JOY_Y, INPUT);
     pinMode(PIN_JOY_SW, INPUT_PULLUP);
 
+    if (buttonEventQueue_ == nullptr)
+    {
+        buttonEventQueue_ = xQueueCreate(4, sizeof(uint8_t));
+        if (buttonEventQueue_ == nullptr)
+        {
+            return false;
+        }
+    }
+
     if (buttonTaskHandle_ == nullptr)
     {
-        BaseType_t result = xTaskCreate(buttonTask, "joy_btn", 2048, this, 1, &buttonTaskHandle_);
+        BaseType_t result = xTaskCreate(buttonTask, "joy_btn", BUTTON_TASK_STACK_SIZE, this, BUTTON_TASK_PRIORITY, &buttonTaskHandle_);
         if (result != pdPASS)
         {
             buttonTaskHandle_ = nullptr;
@@ -43,9 +54,9 @@ bool InputManager::init()
 
 InputManager::InputEvent InputManager::readInput()
 {
-    if (buttonPressedEvent_)
+    uint8_t buttonEvent = 0U;
+    if (buttonEventQueue_ != nullptr && xQueueReceive(buttonEventQueue_, &buttonEvent, 0) == pdTRUE)
     {
-        buttonPressedEvent_ = false;
         return InputEvent::BUTTON_PRESS;
     }
 
@@ -95,7 +106,8 @@ void InputManager::buttonTask(void *parameter)
             lastStableState = lastReadState;
             if (!lastStableState)
             {
-                self->buttonPressedEvent_ = true;
+                const uint8_t event = 1U;
+                (void)xQueueSend(self->buttonEventQueue_, &event, 0);
             }
         }
 

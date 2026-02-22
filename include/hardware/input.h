@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 #include <freertos/FreeRTOS.h>
+#include <freertos/queue.h>
 #include <freertos/task.h>
 
 class InputManager
@@ -9,7 +10,6 @@ class InputManager
 public:
     enum class InputEvent
     {
-        NONE,
         UP,
         DOWN,
         LEFT,
@@ -29,5 +29,5 @@ private:
     InputManager();
 
     TaskHandle_t buttonTaskHandle_;
-    volatile bool buttonPressedEvent_;
+    QueueHandle_t buttonEventQueue_;
 };

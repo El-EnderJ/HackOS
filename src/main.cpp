@@ -61,7 +61,9 @@ void setup()
 
     const uint32_t heapSize = ESP.getHeapSize();
     const uint32_t freeHeap = ESP.getFreeHeap();
-    const uint32_t usedPercent = (heapSize > 0U) ? ((heapSize - freeHeap) * 100U) / heapSize : 0U;
+    const uint32_t usedPercent = (heapSize > 0U)
+                                     ? static_cast<uint32_t>((static_cast<uint64_t>(heapSize - freeHeap) * 100ULL) / heapSize)
+                                     : 0U;
     ESP_LOGI(TAG, "RAM usage: %lu%% (free=%lu, total=%lu)", static_cast<unsigned long>(usedPercent),
              static_cast<unsigned long>(freeHeap), static_cast<unsigned long>(heapSize));
 }
