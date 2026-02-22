@@ -18,7 +18,10 @@
 #include <freertos/task.h>
 
 #include "apps/app_base.h"
+#include "apps/ir_tools_app.h"
 #include "apps/launcher_app.h"
+#include "apps/nfc_tools_app.h"
+#include "apps/rf_tools_app.h"
 #include "apps/wifi_tools_app.h"
 #include "config.h"
 #include "core/app_manager.h"
@@ -71,6 +74,9 @@ void setup()
 
     (void)AppManager::instance().registerApp("launcher", createLauncherApp);
     (void)AppManager::instance().registerApp("wifi_tools", createWifiToolsApp);
+    (void)AppManager::instance().registerApp("ir_tools", createIRToolsApp);
+    (void)AppManager::instance().registerApp("nfc_tools", createNFCToolsApp);
+    (void)AppManager::instance().registerApp("rf_tools", createRFToolsApp);
     (void)AppManager::instance().launchApp("launcher");
 
     const uint32_t heapSize = ESP.getHeapSize();

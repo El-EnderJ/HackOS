@@ -47,6 +47,9 @@ bool AppManager::launchApp(const char *name)
     {
         if (std::strcmp(apps_[i].name, name) == 0)
         {
+            // Only push APP_RUNNING if not already in that state
+            const bool wasRunning =
+                (StateMachine::instance().currentState() == GlobalState::APP_RUNNING);
             destroyActiveApp();
             activeApp_ = apps_[i].factory();
             if (activeApp_ == nullptr)
@@ -54,7 +57,10 @@ bool AppManager::launchApp(const char *name)
                 return false;
             }
             activeApp_->onSetup();
-            (void)StateMachine::instance().pushState(GlobalState::APP_RUNNING);
+            if (!wasRunning)
+            {
+                (void)StateMachine::instance().pushState(GlobalState::APP_RUNNING);
+            }
             lastDrawMs_ = 0U;
             return true;
         }
@@ -116,6 +122,20 @@ void AppManager::onEvent(Event *event)
         {
             destroyActiveApp();
             (void)StateMachine::instance().goBack();
+            // Return to the launcher when leaving a sub-app
+            if (StateMachine::instance().currentState() == GlobalState::LAUNCHER)
+            {
+                (void)launchApp("launcher");
+            }
+        }
+    }
+
+    if (event != nullptr && event->type == EventType::EVT_APP && event->arg0 == APP_EVENT_LAUNCH)
+    {
+        const char *name = appNameAt(static_cast<size_t>(event->arg1));
+        if (name != nullptr)
+        {
+            (void)launchApp(name);
         }
     }
 }

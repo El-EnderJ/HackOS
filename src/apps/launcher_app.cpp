@@ -1,6 +1,7 @@
 #include "apps/launcher_app.h"
 
 #include "core/app_manager.h"
+#include "core/event.h"
 #include "core/event_system.h"
 #include "hardware/display.h"
 #include "hardware/input.h"
@@ -77,7 +78,11 @@ public:
         }
         else if (input == InputManager::InputEvent::BUTTON_PRESS)
         {
-            dialog_.setVisible(!dialog_.isVisible());
+            // Post an async launch request so the Launcher is not destroyed
+            // while still executing inside onEvent.
+            const Event evt{EventType::EVT_APP, APP_EVENT_LAUNCH,
+                            static_cast<int32_t>(menu_.selectedIndex()), nullptr};
+            EventSystem::instance().postEvent(evt);
         }
 
         updateProgressIndicator();

@@ -43,6 +43,18 @@ constexpr uint8_t PIN_SD_CS = 5U;
 /// @brief SPI chip-select for the PN532 NFC controller.
 constexpr uint8_t PIN_NFC_CS = 17U;
 
+// ── Shared SPI bus (VSPI) ─────────────────────────────────────────────────────
+/// These are the default ESP32 VSPI hardware SPI pins shared by all SPI devices.
+
+/// @brief SPI clock line (VSPI SCK).
+constexpr uint8_t PIN_SPI_SCK = 18U;
+
+/// @brief SPI MISO line (VSPI MISO).
+constexpr uint8_t PIN_SPI_MISO = 19U;
+
+/// @brief SPI MOSI line (VSPI MOSI).
+constexpr uint8_t PIN_SPI_MOSI = 23U;
+
 // ── IR transceiver ────────────────────────────────────────────────────────────
 
 /// @brief UART TX / IR LED drive pin for IR transmission.
