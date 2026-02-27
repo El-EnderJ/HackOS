@@ -25,6 +25,7 @@
 #include "apps/launcher_app.h"
 #include "apps/nfc_tools_app.h"
 #include "apps/rf_tools_app.h"
+#include "apps/subghz_analyzer_app.h"
 #include "apps/wifi_tools_app.h"
 #include "config.h"
 #include "core/app_manager.h"
@@ -60,7 +61,7 @@ void setup()
 {
     Serial.begin(SERIAL_BAUD);
     esp_log_level_set(TAG, ESP_LOG_DEBUG);
-    ESP_LOGI(TAG, "Booting HackOS phase 4 – VFS & Asset Manager");
+    ESP_LOGI(TAG, "Booting HackOS phase 5 – User-Space SDK");
 
     // ── FreeRTOS core infrastructure ──────────────────────────────────────
     const bool busOk = hackos::core::HardwareBus::init();
@@ -106,6 +107,7 @@ void setup()
     (void)AppManager::instance().registerApp("nfc_tools", createNFCToolsApp);
     (void)AppManager::instance().registerApp("rf_tools", createRFToolsApp);
     (void)AppManager::instance().registerApp("file_manager", createFileManagerApp);
+    (void)AppManager::instance().registerApp("subghz_analyzer", createSubGhzAnalyzerApp);
     (void)AppManager::instance().launchApp("launcher");
 
     const uint32_t heapSize = ESP.getHeapSize();
