@@ -86,12 +86,14 @@ public:
     bool receive(HackOSEvent &event, TickType_t ticksToWait = portMAX_DELAY);
 
 private:
-    /// Buffer size in bytes (holds ~32 events of sizeof(HackOSEvent)).
+    /// Buffer size in bytes – fits ~64 events at sizeof(HackOSEvent)==16.
     static constexpr size_t BUFFER_SIZE = 1024U;
 
     MessageBus();
 
     /// Static backing store for the message buffer (avoids heap alloc).
+    /// The extra byte is required by xMessageBufferCreateStatic, which
+    /// uses one byte internally to track write positions.
     uint8_t storage_[BUFFER_SIZE + 1U];
     StaticMessageBuffer_t bufferStruct_;
     MessageBufferHandle_t handle_;

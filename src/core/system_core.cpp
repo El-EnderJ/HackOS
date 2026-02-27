@@ -95,7 +95,7 @@ ThreadManager::ThreadManager()
       coreStack_{},
       ioStack_{},
       tcb_{},
-      handles_{nullptr},
+      handles_{},
       running_(false)
 {
 }

@@ -124,7 +124,7 @@ private:
     /// Number of subsystem tasks.
     static constexpr size_t NUM_TASKS = 4U;
 
-    /// Stack sizes in words (StackType_t = uint8_t on ESP32 / 4-byte units).
+    /// Stack sizes in bytes (StackType_t is uint8_t on ESP-IDF / Arduino).
     static constexpr uint32_t GUI_STACK   = 4096U;
     static constexpr uint32_t RADIO_STACK = 4096U;
     static constexpr uint32_t CORE_STACK  = 4096U;
