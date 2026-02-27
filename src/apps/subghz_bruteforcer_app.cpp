@@ -640,10 +640,17 @@ private:
 
     // ── Bruteforce control ───────────────────────────────────────────────
 
+    /// Pre-compute totalCodes_ and codeTimeUs_ for the confirmation screen.
+    void prepareConfirm()
+    {
+        totalCodes_ = 1U << bitCount_;
+        codeTimeUs_ = estimateSingleCodeUs();
+    }
+
     void startBruteforce()
     {
-        totalCodes_ = 1UL << bitCount_;
-        currentCode_ = 0UL;
+        totalCodes_ = 1U << bitCount_;
+        currentCode_ = 0U;
         codeTimeUs_ = estimateSingleCodeUs();
         startTimeMs_ = millis();
 
@@ -720,6 +727,7 @@ private:
                 else
                 {
                     // CAME and Nice are fixed at 12 bits
+                    prepareConfirm();
                     transitionTo(BFState::CONFIRM);
                 }
             }
@@ -755,6 +763,7 @@ private:
             if (sel < BIT_OPTION_COUNT)
             {
                 bitCount_ = BIT_OPTIONS[sel];
+                prepareConfirm();
                 transitionTo(BFState::CONFIRM);
             }
         }
