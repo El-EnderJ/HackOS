@@ -21,6 +21,7 @@
 #include "apps/rf_tools_app.h"
 
 #include <Arduino.h>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -54,6 +55,10 @@ static constexpr uint32_t RF_FREQUENCY_HZ = 433920000U;
 /// LEDC channel and frequency used by the jammer.
 static constexpr uint8_t LEDC_JAMMER_CHANNEL = 0U;
 static constexpr uint32_t JAMMER_FREQ_HZ = 500000U;
+
+/// Maximum gap duration (µs) stored in the ISR buffer.  Longer silences
+/// are clamped to this value to keep the waveform display manageable.
+static constexpr int32_t MAX_GAP_US = 100000;
 
 /// Path for saved captures on the SD card.
 static constexpr const char *CAPTURE_FILE_PATH = "/ext/captures/rf_capture.sub";
@@ -90,9 +95,9 @@ static void IRAM_ATTR rfRxEdgeISR(void * /*arg*/)
     s_lastEdgeUs = nowUs;
 
     // Clamp unreasonably long gaps.
-    if (duration > 100000)
+    if (duration > MAX_GAP_US)
     {
-        duration = 100000;
+        duration = MAX_GAP_US;
     }
 
     // After this edge the pin is at `level`.
@@ -163,7 +168,8 @@ public:
           needsRedraw_(true),
           jammerActive_(false),
           capturedCount_(0U),
-          statusLine_{}
+          statusLine_{},
+          statusTitle_("Status")
     {
         std::memset(capturedTimings_, 0, sizeof(capturedTimings_));
     }
@@ -233,7 +239,7 @@ public:
             break;
         case RFState::SAVING:
         case RFState::REPLAYING:
-            drawTitle(state_ == RFState::SAVING ? "Save Signal" : "Replay");
+            drawTitle(statusTitle_);
             drawStatusView();
             break;
         }
@@ -277,6 +283,9 @@ private:
 
     /// Status message shown on save / replay / load screens.
     char statusLine_[LINE_LEN];
+
+    /// Title for the status display screen (set dynamically).
+    const char *statusTitle_;
 
     // ── State transitions ────────────────────────────────────────────────
 
@@ -451,7 +460,7 @@ private:
     {
         ledcSetup(LEDC_JAMMER_CHANNEL, JAMMER_FREQ_HZ, 1U);
         ledcAttachPin(PIN_RF_TX, LEDC_JAMMER_CHANNEL);
-        ledcWrite(LEDC_JAMMER_CHANNEL, 1U); // 50 % duty at 1-bit resolution
+        ledcWrite(LEDC_JAMMER_CHANNEL, 1U); // 50% duty at 1-bit resolution
 
         jammerActive_ = true;
         ESP_LOGI(TAG_RF_APP, "Jammer started on GPIO%u at %luHz",
@@ -526,6 +535,10 @@ private:
         while (f.available() && capturedCount_ < RAW_BUF_CAPACITY)
         {
             const size_t len = f.readBytesUntil('\n', line, sizeof(line) - 1U);
+            if (len == 0U)
+            {
+                continue;
+            }
             line[len] = '\0';
 
             if (std::strncmp(line, "RAW_Data:", 9) != 0)
@@ -552,7 +565,19 @@ private:
                     break;
                 }
 
-                capturedTimings_[capturedCount_] = static_cast<int32_t>(val);
+                // Clamp to int32_t range for safety.
+                if (val > INT32_MAX)
+                {
+                    capturedTimings_[capturedCount_] = INT32_MAX;
+                }
+                else if (val < INT32_MIN)
+                {
+                    capturedTimings_[capturedCount_] = INT32_MIN;
+                }
+                else
+                {
+                    capturedTimings_[capturedCount_] = static_cast<int32_t>(val);
+                }
                 ++capturedCount_;
                 p = end;
             }
@@ -675,6 +700,7 @@ private:
                 break;
 
             case 2U: // Save Signal
+                statusTitle_ = "Save Signal";
                 if (capturedCount_ > 0U)
                 {
                     if (saveSignal())
@@ -697,6 +723,7 @@ private:
                 break;
 
             case 3U: // Replay Signal
+                statusTitle_ = "Replay";
                 if (capturedCount_ > 0U)
                 {
                     replaySignal();
@@ -718,9 +745,10 @@ private:
                 }
                 else
                 {
+                    statusTitle_ = "Load Signal";
                     std::snprintf(statusLine_, sizeof(statusLine_),
                                   "Load failed!");
-                    transitionTo(RFState::SAVING);
+                    transitionTo(RFState::REPLAYING);
                 }
                 break;
 
