@@ -722,9 +722,9 @@ private:
             {
                 startEmulation(sel);
             }
-            else if (sel == 2U) // Custom URL (uses Rickroll as placeholder)
+            else if (sel == 2U) // Custom URL – placeholder (no OLED text input yet)
             {
-                startEmulation(0U);
+                startEmulation(0U); // defaults to Rickroll
             }
             else // Back
             {
@@ -767,7 +767,10 @@ private:
         }
         else if (input == InputManager::InputEvent::DOWN)
         {
-            if (hexViewOffset_ < NFCReader::MIFARE_1K_BLOCKS - 3U)
+            const uint8_t maxScroll = (NFCReader::MIFARE_1K_BLOCKS > 3U)
+                                         ? static_cast<uint8_t>(NFCReader::MIFARE_1K_BLOCKS - 3U)
+                                         : 0U;
+            if (hexViewOffset_ < maxScroll)
             {
                 ++hexViewOffset_;
                 needsRedraw_ = true;

@@ -339,35 +339,34 @@ bool NFCReader::emulateNtag213Url(const char *url, uint8_t prefixCode,
             uint8_t resp[16] = {};
 
             // NTAG213 memory layout (simplified):
-            // Pages 0-2: header (serial number, internal, lock, CC)
-            // Pages 3+: user data (NDEF TLV)
-            if (page <= 2U)
+            // Page 0-2: header (serial number, internal, lock)
+            // Page 3:   Capability Container (CC)
+            // Pages 4+: user data (NDEF TLV)
+            //
+            // A Type 2 Tag READ command returns 16 bytes (4 pages)
+            // starting from the requested page number.
+            if (page <= 3U)
             {
-                // Capability Container (CC): NDEF magic, version, size, RW
-                resp[0] = 0x04U; // UID byte 1
-                resp[1] = 0x01U; // UID byte 2
-                resp[2] = 0x02U; // UID byte 3
-                resp[3] = 0x03U; // Check byte
+                // Build a flat 16-byte header image for pages 0-3
+                const uint8_t header[16] = {
+                    0x04U, 0x01U, 0x02U, 0x03U, // Page 0: UID bytes + BCC
+                    0x04U, 0x05U, 0x06U, 0x07U, // Page 1: UID bytes + BCC
+                    0x00U, 0x00U, 0x00U, 0x00U, // Page 2: Internal + Lock
+                    0xE1U, 0x10U, 0x06U, 0x00U, // Page 3: CC (NDEF magic)
+                };
 
-                if (page >= 1U)
+                // Copy 16 bytes starting from the requested page
+                const size_t startByte = static_cast<size_t>(page) * 4U;
+                for (size_t i = 0U; i < 16U; ++i)
                 {
-                    resp[4 - page * 4U] = 0x00U; // Internal
-                }
-
-                // CC bytes at page 3 (offset 12-15 of page 0 read)
-                const size_t ccOff = (3U - page) * 4U;
-                if (ccOff < 16U)
-                {
-                    resp[ccOff + 0U] = 0xE1U; // NDEF magic
-                    resp[ccOff + 1U] = 0x10U; // Version 1.0
-                    resp[ccOff + 2U] = 0x06U; // Size = 48 bytes
-                    resp[ccOff + 3U] = 0x00U; // Read/write access
+                    const size_t idx = startByte + i;
+                    resp[i] = (idx < sizeof(header)) ? header[idx] : 0x00U;
                 }
             }
             else
             {
-                // User data pages: serve NDEF content
-                const size_t dataStart = (static_cast<size_t>(page) - 3U) * 4U;
+                // User data pages: serve NDEF content (starts at page 4)
+                const size_t dataStart = (static_cast<size_t>(page) - 4U) * 4U;
                 for (size_t i = 0U; i < 16U; ++i)
                 {
                     const size_t idx = dataStart + i;
