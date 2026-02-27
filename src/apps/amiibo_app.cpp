@@ -524,7 +524,7 @@ private:
         keyBuf[3] = 0xDDU;
 
         const bool ok = StorageManager::instance().writeFile(
-            "/nfc/amiibo/amiibo_keys.bin", keyBuf, sizeof(keyBuf));
+            "/ext/nfc/amiibo/amiibo_keys.bin", keyBuf, sizeof(keyBuf));
 
         std::snprintf(statusLine_, sizeof(statusLine_),
                       ok ? "Keys saved to SD" : "Write failed");

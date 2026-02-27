@@ -431,7 +431,7 @@ GENERATE_KEYS──(PRESS/LEFT)──► MAIN_MENU
 | WiFi Tools → Save AP | `/captures/wifi_scan.txt` | `SSID: …\nBSSID: …\nRSSI: … dBm\nChannel: …\nAuth: …\n` |
 | NFC Tools → Save UID | `/captures/nfc_uid.txt` | `UID: XX:XX:XX:XX\n` |
 | IR Tools → Save Code | `/captures/ir_codes.txt` | `Proto: …\nCode: 0x…\nBits: …\n` |
-| Amiibo Master → Keys | `/nfc/amiibo/amiibo_keys.bin` | Binary placeholder (80 bytes) |
+| Amiibo Master → Keys | `/ext/nfc/amiibo/amiibo_keys.bin` | Binary placeholder (80 bytes) |
 
 All files are **appended** (not overwritten) so multiple captures accumulate.  
 Create the `/captures/` directory on the SD card before first use.
