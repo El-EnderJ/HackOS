@@ -29,7 +29,7 @@ private:
         AppFactory factory;
     };
 
-    static constexpr size_t MAX_APPS = 8U;
+    static constexpr size_t MAX_APPS = 16U;
 
     AppManager();
 

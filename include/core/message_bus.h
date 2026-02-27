@@ -34,6 +34,7 @@ enum class HackOSEventType : uint8_t
     EVT_IR,
     EVT_POWER,
     EVT_STORAGE,
+    EVT_CREDENTIALS, ///< Captured credentials from Captive Portal
 };
 
 /// @brief Fixed-size event structure published to the message bus.

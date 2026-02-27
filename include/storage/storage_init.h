@@ -15,6 +15,8 @@
 
 #pragma once
 
+#include <cstddef>
+
 namespace hackos::storage {
 
 // ── StorageInit ──────────────────────────────────────────────────────────────
@@ -34,7 +36,7 @@ public:
 
 private:
     /// Number of required directories.
-    static constexpr size_t DIR_COUNT = 4U;
+    static constexpr size_t DIR_COUNT = 5U;
 
     /// Paths that must exist on the SD card (VFS virtual paths).
     static const char *const REQUIRED_DIRS[DIR_COUNT];
