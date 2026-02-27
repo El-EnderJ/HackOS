@@ -152,3 +152,45 @@ bool StorageManager::appendChunk(const char *path, const uint8_t *data, size_t l
     lastError_ = "OK";
     return true;
 }
+
+bool StorageManager::readFile(const char *path, uint8_t *buf, size_t maxLen, size_t *bytesRead)
+{
+    if (!mounted_ || path == nullptr || buf == nullptr || maxLen == 0U)
+    {
+        lastError_ = "readFile: bad args";
+        if (bytesRead != nullptr)
+        {
+            *bytesRead = 0U;
+        }
+        return false;
+    }
+
+    File f = SD.open(path, FILE_READ);
+    if (!f)
+    {
+        lastError_ = "readFile: open failed";
+        if (bytesRead != nullptr)
+        {
+            *bytesRead = 0U;
+        }
+        return false;
+    }
+
+    const size_t fileSize = f.size();
+    const size_t toRead = (fileSize < maxLen) ? fileSize : maxLen;
+    const size_t nRead = f.read(buf, toRead);
+    f.close();
+
+    if (bytesRead != nullptr)
+    {
+        *bytesRead = nRead;
+    }
+
+    if (nRead != toRead)
+    {
+        lastError_ = "readFile: short read";
+        return false;
+    }
+    lastError_ = "OK";
+    return true;
+}

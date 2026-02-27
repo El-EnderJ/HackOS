@@ -55,6 +55,7 @@ graph TD
         IA["IRToolsApp"]
         RA["RFToolsApp"]
         FA["FileManagerApp"]
+        AA["AmiiboApp"]
     end
 
     subgraph hal["Hardware Abstraction Layer"]
@@ -79,6 +80,7 @@ graph TD
     AM -->|"onSetup/onLoop/onDraw/onDestroy"| IA
     AM -->|"onSetup/onLoop/onDraw/onDestroy"| RA
     AM -->|"onSetup/onLoop/onDraw/onDestroy"| FA
+    AM -->|"onSetup/onLoop/onDraw/onDestroy"| AA
 
     ES -->|"EVT_INPUT"| AM
     ES -->|"EVT_SYSTEM / EVT_APP"| AM
@@ -93,6 +95,8 @@ graph TD
     IA --> ST
     RA --> RF
     FA --> ST
+    AA --> NR
+    AA --> ST
 
     AM --> DM
     AM --> IM
@@ -155,7 +159,8 @@ Do **not** change `board_build.partitions` unless you know what you are doing.
 
 1. Format a microSD card as **FAT32**.
 2. Create the directory `/captures/` on the card.
-3. Insert before powering on – the StorageManager attempts `SD.begin()` during `setup()` and logs the result.
+3. Optionally create `/nfc/amiibo/` and populate it with `.bin` dumps of NTAG215 Amiibos (540 bytes each), organised in sub-folders (e.g. `Zelda/`, `Mario/`).
+4. Insert before powering on – the StorageManager attempts `SD.begin()` during `setup()` and logs the result.
 
 ---
 
@@ -323,6 +328,7 @@ That's it – the Launcher will automatically display `"my_app"` in its menu.
 | **IR Tools** | `ir_tools` | Sniff/clone IR codes, save captured code to SD |
 | **RF Tools** | `rf_tools` | Receive/transmit 433 MHz OOK codes |
 | **File Manager** | `file_manager` | Browse SD card directories; shows name, size |
+| **Amiibo Master** | `amiibo` | Browse SD for NTAG215 .bin dumps, emulate Amiibos, write to blank tags |
 
 ### Capture file paths on SD
 
@@ -345,6 +351,7 @@ HackOS/
 │   │   ├── launcher_app.h
 │   │   ├── wifi_tools_app.h
 │   │   ├── nfc_tools_app.h
+│   │   ├── amiibo_app.h
 │   │   ├── ir_tools_app.h
 │   │   ├── rf_tools_app.h
 │   │   └── file_manager_app.h

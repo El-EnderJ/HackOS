@@ -50,6 +50,17 @@ public:
      */
     bool appendChunk(const char *path, const uint8_t *data, size_t len);
 
+    /**
+     * @brief Read an entire file into a caller-supplied buffer.
+     *
+     * @param path     Absolute path to the file on SD.
+     * @param buf      Output buffer (must be at least @p maxLen bytes).
+     * @param maxLen   Maximum bytes to read (buffer capacity).
+     * @param[out] bytesRead  Receives the actual number of bytes read.
+     * @return true on success.
+     */
+    bool readFile(const char *path, uint8_t *buf, size_t maxLen, size_t *bytesRead);
+
 private:
     StorageManager();
 

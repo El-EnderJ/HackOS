@@ -13,7 +13,7 @@ HackOS is a cooperative, event-driven micro-OS designed to run on a bare ESP32 a
 ```
 ┌────────────────────────────────────────────────────┐
 │                  Applications                      │
-│  Launcher · WiFi · NFC · IR · RF · FileManager     │
+│  Launcher · WiFi · NFC · IR · RF · FileManager · Amiibo │
 ├────────────────────────────────────────────────────┤
 │                  Core OS                           │
 │        AppManager · EventSystem · StateMachine     │
@@ -40,6 +40,7 @@ HackOS/
 │   │   ├── nfc_tools_app.h      Factory: createNFCToolsApp()
 │   │   ├── ir_tools_app.h       Factory: createIRToolsApp()
 │   │   ├── rf_tools_app.h       Factory: createRFToolsApp()
+│   │   ├── amiibo_app.h        Factory: createAmiiboApp()
 │   │   └── file_manager_app.h   Factory: createFileManagerApp()
 │   ├── core/
 │   │   ├── event.h              Event struct · EventType enum · event codes
@@ -90,6 +91,7 @@ setup()
   ├─ registerApp("nfc_tools",     createNFCToolsApp)
   ├─ registerApp("rf_tools",      createRFToolsApp)
   ├─ registerApp("file_manager",  createFileManagerApp)
+  ├─ registerApp("amiibo",        createAmiiboApp)
   │
   ├─ launchApp("launcher")        LauncherApp::onSetup()
   │
@@ -209,6 +211,8 @@ bool isReady() const;
 bool readUID(uint8_t *buf, uint8_t *len, uint16_t timeoutMs);
 bool authenticateBlock(uid, uidLen, blockNumber);
 bool readBlock(blockNumber, data[16]);
+bool emulateNtag215(const uint8_t *dump, uint16_t timeoutMs);  // Phase 12
+bool writeNtag215(const uint8_t *dump);                         // Phase 12
 void deinit();
 ```
 
@@ -395,6 +399,29 @@ Entry label format:
 Maximum entries per directory: **16**.  
 Maximum path depth: **128 characters**.
 
+### 7.7 AmiiboApp (Phase 12)
+
+```
+MAIN_MENU    ──(Browse Amiibo)──► BROWSING
+             ──(Generate Keys)──► GENERATE_KEYS
+             ──(Write to Tag)──► WRITING
+             ──(Back)──► SYSTEM_EVENT_BACK
+BROWSING     ──(SELECT dir)──► descend, re-listDir
+             ──(SELECT .bin 540B)──► FILE_SELECTED
+             ──(LEFT)──► navigate up / MAIN_MENU
+FILE_SELECTED──(OK/PRESS)──► EMULATING
+             ──(DOWN)──► WRITING (write to blank NTAG215)
+             ──(LEFT)──► BROWSING
+EMULATING    ──(PRESS/LEFT)──► FILE_SELECTED
+WRITING      ──(PRESS/LEFT)──► MAIN_MENU
+GENERATE_KEYS──(PRESS/LEFT)──► MAIN_MENU
+```
+
+**SD directory**: `/ext/nfc/amiibo/` – user organises `.bin` files in sub-folders (e.g. `Zelda/`, `Mario/`).
+**Dump format**: Raw 540-byte NTAG215 binary image (135 pages × 4 bytes).
+**Heap allocation**: Single `heap_caps_malloc(540, MALLOC_CAP_8BIT)` – freed in `onDestroy()`.
+**NFC commands handled**: READ (0x30), FAST_READ (0x3A), PWD_AUTH (0x1B), GET_VERSION (0x60).
+
 ---
 
 ## 8. SD Card Capture Files
@@ -404,6 +431,7 @@ Maximum path depth: **128 characters**.
 | WiFi Tools → Save AP | `/captures/wifi_scan.txt` | `SSID: …\nBSSID: …\nRSSI: … dBm\nChannel: …\nAuth: …\n` |
 | NFC Tools → Save UID | `/captures/nfc_uid.txt` | `UID: XX:XX:XX:XX\n` |
 | IR Tools → Save Code | `/captures/ir_codes.txt` | `Proto: …\nCode: 0x…\nBits: …\n` |
+| Amiibo Master → Keys | `/ext/nfc/amiibo/amiibo_keys.bin` | Binary placeholder (80 bytes) |
 
 All files are **appended** (not overwritten) so multiple captures accumulate.  
 Create the `/captures/` directory on the SD card before first use.
@@ -416,6 +444,7 @@ Create the `/captures/` directory on the SD card before first use.
 |---|---|---|
 | Free heap at Launcher | > 150 KB | Logged via `ESP.getFreeHeap()` at startup |
 | WiFi AP label heap | max 16 × 32 B = 512 B | Freed in `onDestroy()` |
+| Amiibo dump buffer | 540 B | `heap_caps_malloc` in `onSetup()`, freed in `onDestroy()` |
 | EventSystem queue | 16 × sizeof(Event) ≈ 320 B | FreeRTOS static queue |
 | OLED frame buffer | 1 KB (SSD1306 128×64 / 8) | Inside Adafruit GFX |
 | Stack per FreeRTOS task | default Arduino task: 8 KB | No custom tasks created |
@@ -444,8 +473,10 @@ All files compile cleanly under `-Wall -Wextra`. Intentionally-ignored return va
 | Evil Twin | Logged only; AP is not actually hosted |
 | SD writes are synchronous | `writeFile` / `appendChunk` block the loop; keep payloads < 4 KB |
 | No OTA | Firmware updates require USB flashing via PlatformIO |
-| Max 8 apps | `AppManager::MAX_APPS = 8`; `EventSystem::MAX_OBSERVERS = 8` |
+| Max 16 apps | `AppManager::MAX_APPS = 16`; `EventSystem::MAX_OBSERVERS = 8` |
 | SD `/captures/` must exist | The directory is not auto-created; format card with it pre-made |
+| Amiibo keys placeholder | `amiibo_keys.bin` is a zeroed placeholder; real keys must be obtained separately |
+| Amiibo emulation blocking | `emulateNtag215()` blocks the loop for up to 30 s waiting for a reader |
 
 ---
 
