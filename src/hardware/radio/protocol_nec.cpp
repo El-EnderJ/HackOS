@@ -1,7 +1,5 @@
 #include "hardware/radio/protocol_nec.h"
 
-#include <cstring>
-
 namespace hackos::radio {
 
 bool Protocol_NEC::matchesDuration(int32_t measured, int32_t nominal)
@@ -79,8 +77,7 @@ bool Protocol_NEC::tryDecode(const int32_t *rawTimings,
     record.clear();
     record.frequencyHz = CARRIER_HZ;
     record.modulation = Modulation::IR_PULSE;
-    std::strncpy(record.protocolName, "NEC", MAX_PROTOCOL_NAME - 1U);
-    record.protocolName[MAX_PROTOCOL_NAME - 1U] = '\0';
+    copyProtocolName(record.protocolName, "NEC");
     record.bitCount = NEC_BITS;
     record.decodedValue = decoded;
 

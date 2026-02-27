@@ -1,7 +1,5 @@
 #include "hardware/radio/protocol_mifare.h"
 
-#include <cstring>
-
 namespace hackos::radio {
 
 bool Protocol_Mifare::tryDecode(const int32_t *rawTimings,
@@ -32,8 +30,7 @@ bool Protocol_Mifare::tryDecode(const int32_t *rawTimings,
     record.clear();
     record.frequencyHz = CARRIER_HZ;
     record.modulation = Modulation::NFC_A;
-    std::strncpy(record.protocolName, "MIFARE", MAX_PROTOCOL_NAME - 1U);
-    record.protocolName[MAX_PROTOCOL_NAME - 1U] = '\0';
+    copyProtocolName(record.protocolName, "MIFARE");
     record.bitCount = static_cast<uint16_t>(uidLen * 8U);
     record.decodedValue = uidValue;
 

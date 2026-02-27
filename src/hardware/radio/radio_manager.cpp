@@ -19,6 +19,8 @@ RadioManager::RadioManager()
       rawRing_(),
       workerBuf_{},
       workerBufLen_(0U),
+      txBuf_{},
+      readBuf_{},
       lastRecord_{},
       hasLast_(false)
 {
@@ -116,8 +118,7 @@ bool RadioManager::transmit(const SignalRecord &record)
     }
 
     // Encode the signal into raw timings.
-    int32_t txBuf[MAX_RAW_SAMPLES];
-    const size_t len = proto->encode(record, txBuf, MAX_RAW_SAMPLES);
+    const size_t len = proto->encode(record, txBuf_, MAX_RAW_SAMPLES);
     if (len == 0U)
     {
         return false;
@@ -128,7 +129,7 @@ bool RadioManager::transmit(const SignalRecord &record)
         return false;
     }
 
-    const bool ok = dev->write(reinterpret_cast<const uint8_t *>(txBuf),
+    const bool ok = dev->write(reinterpret_cast<const uint8_t *>(txBuf_),
                                len * sizeof(int32_t));
     dev->stop();
     return ok;
@@ -167,13 +168,12 @@ void RadioManager::processBuffer()
     }
 
     // Poll device for new data and push into ring buffer.
-    uint8_t readBuf[256U];
-    const size_t got = activeDevice_->read(readBuf, sizeof(readBuf));
+    const size_t got = activeDevice_->read(readBuf_, sizeof(readBuf_));
 
     // Interpret the read bytes as int32_t timing samples when enough data
     // is available (device adapters are expected to deliver aligned data).
     const size_t samples = got / sizeof(int32_t);
-    const int32_t *samplePtr = reinterpret_cast<const int32_t *>(readBuf);
+    const int32_t *samplePtr = reinterpret_cast<const int32_t *>(readBuf_);
     for (size_t i = 0U; i < samples; ++i)
     {
         rawRing_.push(samplePtr[i]);

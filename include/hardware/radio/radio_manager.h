@@ -190,6 +190,12 @@ private:
     int32_t workerBuf_[MAX_RAW_SAMPLES];
     size_t workerBufLen_;
 
+    /// Scratch buffer for transmit encoding (avoids large stack allocs).
+    int32_t txBuf_[MAX_RAW_SAMPLES];
+
+    /// Scratch buffer for device reads in the worker loop.
+    uint8_t readBuf_[256U];
+
     /// Most recently decoded signal.
     SignalRecord lastRecord_;
     bool hasLast_;

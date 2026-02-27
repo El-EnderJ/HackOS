@@ -1,7 +1,6 @@
 #include "hardware/radio/protocol_ook.h"
 
 #include <cstdlib>
-#include <cstring>
 
 namespace hackos::radio {
 
@@ -74,8 +73,7 @@ bool Protocol_OOK::tryDecode(const int32_t *rawTimings,
     record.clear();
     record.frequencyHz = DEFAULT_FREQ_HZ;
     record.modulation = Modulation::OOK;
-    std::strncpy(record.protocolName, "OOK", MAX_PROTOCOL_NAME - 1U);
-    record.protocolName[MAX_PROTOCOL_NAME - 1U] = '\0';
+    copyProtocolName(record.protocolName, "OOK");
     record.bitCount = bits;
     record.decodedValue = decoded;
 

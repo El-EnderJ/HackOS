@@ -106,4 +106,24 @@ struct SignalRecord
     }
 };
 
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * @brief Safely copy a protocol name into a SignalRecord field.
+ *
+ * Always guarantees NUL termination within the MAX_PROTOCOL_NAME buffer.
+ *
+ * @param dst  Destination buffer (at least MAX_PROTOCOL_NAME bytes).
+ * @param src  Source NUL-terminated string.
+ */
+inline void copyProtocolName(char *dst, const char *src)
+{
+    size_t i = 0U;
+    for (; i < MAX_PROTOCOL_NAME - 1U && src[i] != '\0'; ++i)
+    {
+        dst[i] = src[i];
+    }
+    dst[i] = '\0';
+}
+
 } // namespace hackos::radio
