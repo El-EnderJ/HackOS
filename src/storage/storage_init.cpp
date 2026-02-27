@@ -15,6 +15,7 @@ const char *const StorageInit::REQUIRED_DIRS[DIR_COUNT] = {
     "/ext/payloads",
     "/ext/captures",
     "/ext/assets",
+    "/ext/portals",
 };
 
 // ── Public API ───────────────────────────────────────────────────────────────
