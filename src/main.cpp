@@ -26,6 +26,7 @@
 #include "apps/nfc_tools_app.h"
 #include "apps/rf_tools_app.h"
 #include "apps/subghz_analyzer_app.h"
+#include "apps/wifi_offensive_app.h"
 #include "apps/wifi_tools_app.h"
 #include "config.h"
 #include "core/app_manager.h"
@@ -108,6 +109,7 @@ void setup()
     (void)AppManager::instance().registerApp("rf_tools", createRFToolsApp);
     (void)AppManager::instance().registerApp("file_manager", createFileManagerApp);
     (void)AppManager::instance().registerApp("subghz_analyzer", createSubGhzAnalyzerApp);
+    (void)AppManager::instance().registerApp("wifi_offensive", createWifiOffensiveApp);
     (void)AppManager::instance().launchApp("launcher");
 
     const uint32_t heapSize = ESP.getHeapSize();
