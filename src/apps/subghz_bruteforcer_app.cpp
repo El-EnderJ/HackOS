@@ -264,10 +264,10 @@ public:
           needsRedraw_(true),
           protocol_(Protocol::PT2262),
           bitCount_(12U),
-          totalCodes_(0UL),
-          currentCode_(0UL),
-          startTimeMs_(0UL),
-          codeTimeUs_(0UL),
+          totalCodes_(0U),
+          currentCode_(0U),
+          startTimeMs_(0U),
+          codeTimeUs_(0U),
           txInitialised_(false),
           timingBuf_{}
     {
@@ -544,7 +544,7 @@ private:
 
         // Use actual elapsed time to refine the estimate.
         const uint32_t elapsedMs = millis() - startTimeMs_;
-        if (elapsedMs == 0U || currentCode_ == 0U)
+        if (elapsedMs == 0U)
         {
             return estimateTotalSeconds();
         }
