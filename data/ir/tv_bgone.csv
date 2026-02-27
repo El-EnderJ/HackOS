@@ -1,0 +1,58 @@
+# TV-B-Gone Power Codes Database for HackOS
+# Format: brand,protocol,hex_code,bits
+# Protocols: NEC=3, Sony=5, Samsung=7, RC5=4, RC6=6, LG=10, Panasonic=9, JVC=8, Sharp=15, Sanyo=12
+# This file is loaded from /ext/assets/ir/tv_bgone.csv on the SD card.
+# The system sends each code sequentially with a 200ms delay.
+Samsung,7,0xE0E040BF,32
+LG,10,0x20DF10EF,32
+Sony,5,0xA90,12
+Sony,5,0xA90,15
+Sony,5,0xA90,20
+Panasonic,9,0x400401FC,48
+Sharp,15,0x41A2,15
+Toshiba,3,0x02FD48B7,32
+Philips,4,0x100C,13
+Philips,6,0x100C,20
+Sanyo,12,0x1D8113C,42
+JVC,8,0xC5E8,16
+Hitachi,3,0x0AF5,32
+Vizio,3,0x20DF10EF,32
+RCA,3,0x1CE348B7,32
+Magnavox,3,0x20DF10EF,32
+Emerson,3,0x00FF00FF,32
+Sylvania,3,0x00FF00FF,32
+Funai,3,0x00FF00FF,32
+Insignia,3,0x20DF10EF,32
+Hisense,3,0x20DF10EF,32
+TCL,3,0x40BF12ED,32
+Haier,3,0xA25D48B7,32
+Westinghouse,3,0x04FB40BF,32
+Element,3,0x08F740BF,32
+Dynex,3,0x20DF10EF,32
+Apex,3,0xCE310EF1,32
+AOC,3,0x8322A15E,32
+Polaroid,3,0x00FF00FF,32
+Proscan,3,0x1CE348B7,32
+Zenith,10,0x20DF10EF,32
+Mitsubishi,3,0xEA1552AD,32
+Pioneer,3,0xA55A38C7,32
+Denon,15,0x2A4C0A84,48
+Yamaha,3,0x5EA1F807,32
+Onkyo,3,0x4BB640BF,32
+Marantz,4,0x100C,13
+Harman,3,0x70702CC,32
+Bose,3,0x5743C03F,32
+Roku,3,0x57E3E817,32
+Amazon,3,0x40040100,32
+Apple,3,0x77E1A0C3,32
+Xiaomi,3,0x10BF00FF,32
+Grundig,4,0x100C,13
+Nokia,4,0x100C,13
+Bang_Olufsen,3,0x2288B44D,32
+Loewe,3,0x34CB7C83,32
+Metz,4,0x100C,13
+Thomson,4,0x100C,13
+Telefunken,3,0x00FF00FF,32
+Changhong,3,0x40BF00FF,32
+Skyworth,3,0xC03F00FF,32
+Konka,3,0x40BF00FF,32

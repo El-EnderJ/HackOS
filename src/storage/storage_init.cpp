@@ -16,6 +16,8 @@ const char *const StorageInit::REQUIRED_DIRS[DIR_COUNT] = {
     "/ext/captures",
     "/ext/assets",
     "/ext/portals",
+    "/ext/assets/ir",
+    "/ext/assets/ir/saved",
 };
 
 // ── Public API ───────────────────────────────────────────────────────────────
