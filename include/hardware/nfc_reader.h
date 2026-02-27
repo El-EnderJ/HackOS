@@ -6,6 +6,10 @@
  *  - Multiple default-key authentication for Mifare Classic sector dumps.
  *  - Magic-card (Gen1/Gen2) UID writing.
  *  - NTAG213 URL tag emulation via PN532 Target mode.
+ *
+ * Phase 12 additions:
+ *  - Full NTAG215 (540-byte) Amiibo emulation via tgInitAsTarget.
+ *  - NTAG215 binary dump writing to blank physical tags.
  */
 
 #pragma once
@@ -107,6 +111,39 @@ public:
      */
     bool emulateNtag213Url(const char *url, uint8_t prefixCode = 0x04U,
                            uint16_t timeoutMs = 30000U);
+
+    // ── Phase 12: NTAG215 Amiibo emulation & writing ────────────────────
+
+    /// Size of an NTAG215 dump in bytes (135 pages × 4 bytes).
+    static constexpr size_t NTAG215_SIZE = 540U;
+    /// Number of 4-byte pages in an NTAG215 tag.
+    static constexpr uint8_t NTAG215_PAGES = 135U;
+
+    /**
+     * @brief Emulate a full NTAG215 tag from a raw 540-byte binary dump.
+     *
+     * Configures the PN532 in tgInitAsTarget mode and serves page-read
+     * commands from the dump buffer.  Handles READ (0x30) and PWD_AUTH
+     * (0x1B) commands.  Blocks until the reader disconnects or the
+     * timeout expires.
+     *
+     * @param dump      Pointer to a 540-byte NTAG215 binary image.
+     * @param timeoutMs Maximum time to stay in target mode.
+     * @return true if at least one successful exchange occurred.
+     */
+    bool emulateNtag215(const uint8_t *dump, uint16_t timeoutMs = 30000U);
+
+    /**
+     * @brief Write a 540-byte binary dump to a physical blank NTAG215 tag.
+     *
+     * Writes pages 4–129 (user data area) of the dump to the tag.
+     * Pages 0–3 (UID/manufacturer) and 130–134 (config/password) are
+     * skipped as they are typically read-only or require special auth.
+     *
+     * @param dump Pointer to a 540-byte NTAG215 binary image.
+     * @return true if all writable pages were written successfully.
+     */
+    bool writeNtag215(const uint8_t *dump);
 
     /// @brief Access the table of default keys (6 bytes each).
     static const uint8_t (*defaultKeys())[6] { return DEFAULT_KEYS; }

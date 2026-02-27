@@ -18,6 +18,8 @@ const char *const StorageInit::REQUIRED_DIRS[DIR_COUNT] = {
     "/ext/portals",
     "/ext/assets/ir",
     "/ext/assets/ir/saved",
+    "/ext/nfc",
+    "/ext/nfc/amiibo",
 };
 
 // ── Public API ───────────────────────────────────────────────────────────────

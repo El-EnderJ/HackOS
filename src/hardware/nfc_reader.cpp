@@ -390,3 +390,176 @@ bool NFCReader::emulateNtag213Url(const char *url, uint8_t prefixCode,
     ESP_LOGI(TAG_NFC, "emulateNtag213Url: %s", success ? "served" : "no reads");
     return success;
 }
+
+// ── NTAG215 full-dump Amiibo emulation ──────────────────────────────────────
+
+bool NFCReader::emulateNtag215(const uint8_t *dump, uint16_t timeoutMs)
+{
+    if (!initialized_ || dump == nullptr)
+    {
+        return false;
+    }
+
+    // Extract UID bytes from the dump to use in SENS_RES/NFCID1
+    // NTAG215 page 0: UID0 UID1 UID2 BCC0, page 1: UID3 UID4 UID5 UID6
+    const uint8_t atr[] = {
+        0x44U, 0x00U,                         // SENS_RES (NTAG215)
+        dump[0], dump[1], dump[2],             // NFCID1t (3 bytes)
+        0x00U,                                 // SEL_RES (SAK = 0x00, Type 2 Tag)
+    };
+
+    static const uint8_t felicaParams[] = {
+        0x01U, 0xFEU, 0xA2U, 0xA3U, 0xA4U, 0xA5U,
+        0xA6U, 0xA7U, 0xC0U, 0xC1U, 0xC2U, 0xC3U,
+        0xC4U, 0xC5U, 0xC6U, 0xC7U, 0xFFU, 0xFFU,
+    };
+
+    static const uint8_t nfcid3[] = {
+        0x01U, 0xFEU, 0xA2U, 0xA3U, 0xA4U,
+        0xA5U, 0xA6U, 0xA7U, 0xC0U, 0xC1U,
+    };
+
+    const uint8_t activated = nfc_.tgInitAsTarget(
+        atr, sizeof(atr),
+        felicaParams, sizeof(felicaParams),
+        nfcid3, sizeof(nfcid3),
+        timeoutMs);
+
+    if (activated == 0U)
+    {
+        ESP_LOGW(TAG_NFC, "emulateNtag215: no reader detected (timeout)");
+        return false;
+    }
+
+    ESP_LOGI(TAG_NFC, "emulateNtag215: reader connected, serving pages");
+
+    bool success = false;
+    uint8_t cmd[32] = {};
+    uint8_t cmdLen = 0U;
+
+    for (uint8_t attempts = 0U; attempts < 50U; ++attempts)
+    {
+        cmdLen = sizeof(cmd);
+        if (nfc_.tgGetData(cmd, &cmdLen) != 1)
+        {
+            break;
+        }
+
+        if (cmdLen < 1U)
+        {
+            continue;
+        }
+
+        if (cmd[0] == 0x30U && cmdLen >= 2U)
+        {
+            // READ command: 0x30 <page> → return 16 bytes (4 pages)
+            const uint8_t page = cmd[1];
+            uint8_t resp[16] = {};
+
+            for (uint8_t i = 0U; i < 4U; ++i)
+            {
+                const uint8_t p = page + i;
+                if (p < NTAG215_PAGES)
+                {
+                    std::memcpy(resp + (i * 4U), dump + (static_cast<size_t>(p) * 4U), 4U);
+                }
+            }
+
+            if (nfc_.tgSetData(resp, 16U) == 1)
+            {
+                success = true;
+            }
+        }
+        else if (cmd[0] == 0x60U && cmdLen >= 2U)
+        {
+            // GET_VERSION command → respond with NTAG215 version info
+            const uint8_t version[] = {
+                0x00U, 0x04U, 0x04U, 0x02U,
+                0x01U, 0x00U, 0x11U, 0x03U,
+            };
+            nfc_.tgSetData(const_cast<uint8_t *>(version), sizeof(version));
+        }
+        else if (cmd[0] == 0x1BU && cmdLen >= 5U)
+        {
+            // PWD_AUTH command: 0x1B <pw0> <pw1> <pw2> <pw3>
+            // Respond with PACK (2 bytes) from pages 133-134 area
+            // For Amiibo, respond with 0x80 0x80 (standard PACK)
+            const uint8_t pack[] = {0x80U, 0x80U};
+            nfc_.tgSetData(const_cast<uint8_t *>(pack), sizeof(pack));
+            success = true;
+        }
+        else if (cmd[0] == 0x3AU && cmdLen >= 3U)
+        {
+            // FAST_READ: 0x3A <startPage> <endPage> → return all pages
+            const uint8_t startPage = cmd[1];
+            const uint8_t endPage = cmd[2];
+            if (startPage <= endPage && endPage < NTAG215_PAGES)
+            {
+                const uint8_t count = endPage - startPage + 1U;
+                // Limit response to avoid buffer overflow (max ~60 bytes safe)
+                const uint8_t maxPages = 14U; // 56 bytes, safe for PN532 buffer
+                const uint8_t pages = (count > maxPages) ? maxPages : count;
+                uint8_t resp[56] = {};
+                std::memcpy(resp, dump + (static_cast<size_t>(startPage) * 4U),
+                            static_cast<size_t>(pages) * 4U);
+                nfc_.tgSetData(resp, pages * 4U);
+                success = true;
+            }
+            else
+            {
+                uint8_t nack = 0x00U;
+                nfc_.tgSetData(&nack, 1U);
+            }
+        }
+        else
+        {
+            // Unknown command – respond with ACK
+            uint8_t ack = 0x0AU;
+            nfc_.tgSetData(&ack, 1U);
+        }
+    }
+
+    ESP_LOGI(TAG_NFC, "emulateNtag215: %s", success ? "served" : "no reads");
+    return success;
+}
+
+// ── NTAG215 binary dump writer ──────────────────────────────────────────────
+
+bool NFCReader::writeNtag215(const uint8_t *dump)
+{
+    if (!initialized_ || dump == nullptr)
+    {
+        return false;
+    }
+
+    // Step 1: Detect the tag
+    uint8_t uid[7] = {};
+    uint8_t uidLen = 0U;
+    if (!readUID(uid, &uidLen, 2000U))
+    {
+        ESP_LOGE(TAG_NFC, "writeNtag215: no tag found");
+        return false;
+    }
+
+    // Step 2: Write user-data pages (4–129)
+    // Pages 0-3 are manufacturer/UID (read-only on real tags)
+    // Pages 130-134 are config/password area
+    for (uint8_t page = 4U; page < 130U; ++page)
+    {
+        const size_t offset = static_cast<size_t>(page) * 4U;
+        uint8_t pageData[4];
+        std::memcpy(pageData, dump + offset, 4U);
+
+        if (nfc_.ntag2xx_WritePage(page, pageData) != 1)
+        {
+            ESP_LOGE(TAG_NFC, "writeNtag215: write page %u failed",
+                     static_cast<unsigned>(page));
+            return false;
+        }
+
+        ESP_LOGD(TAG_NFC, "writeNtag215: page %u OK", static_cast<unsigned>(page));
+    }
+
+    ESP_LOGI(TAG_NFC, "writeNtag215: all pages written successfully");
+    return true;
+}
