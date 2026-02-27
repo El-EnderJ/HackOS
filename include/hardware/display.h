@@ -20,6 +20,9 @@ public:
     void present();
     bool isInitialized() const;
 
+    /// @brief Direct access to the SSD1306 display buffer for DMA-style writes.
+    uint8_t *getDisplayBuffer();
+
 private:
     static constexpr int16_t WIDTH = 128;
     static constexpr int16_t HEIGHT = 64;

@@ -93,3 +93,8 @@ bool DisplayManager::isInitialized() const
 {
     return initialized_;
 }
+
+uint8_t *DisplayManager::getDisplayBuffer()
+{
+    return display_.getBuffer();
+}
