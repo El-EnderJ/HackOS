@@ -168,7 +168,24 @@ const char *JsonConfig::parseString(const char *p, char *out, size_t maxLen)
     {
         if (*p == '\\' && *(p + 1) != '\0')
         {
-            ++p; // skip backslash, take next char literally
+            ++p; // skip backslash
+            char ch = *p;
+            switch (ch)
+            {
+            case 'n': ch = '\n'; break;
+            case 't': ch = '\t'; break;
+            case 'r': ch = '\r'; break;
+            case '"': ch = '"'; break;
+            case '\\': ch = '\\'; break;
+            case '/': ch = '/'; break;
+            default: break; // unrecognised – keep literal
+            }
+            if (i < maxLen - 1U)
+            {
+                out[i++] = ch;
+            }
+            ++p;
+            continue;
         }
         if (i < maxLen - 1U)
         {

@@ -70,7 +70,9 @@ XBMAsset *AssetLoader::load(const char *path)
     const uint16_t width = static_cast<uint16_t>(header[0] | (header[1] << 8U));
     const uint16_t height = static_cast<uint16_t>(header[2] | (header[3] << 8U));
 
-    if (width == 0U || height == 0U)
+    // Reject zero or unreasonably large dimensions to prevent overflow.
+    static constexpr uint16_t MAX_DIM = 256U;
+    if (width == 0U || height == 0U || width > MAX_DIM || height > MAX_DIM)
     {
         ESP_LOGW(TAG_ASSET, "load: invalid dimensions %ux%u", width, height);
         f.close();
