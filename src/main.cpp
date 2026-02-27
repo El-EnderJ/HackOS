@@ -36,6 +36,8 @@
 #include "hardware/display.h"
 #include "hardware/input.h"
 #include "hardware/storage.h"
+#include "storage/vfs.h"
+#include "storage/storage_init.h"
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -58,7 +60,7 @@ void setup()
 {
     Serial.begin(SERIAL_BAUD);
     esp_log_level_set(TAG, ESP_LOG_DEBUG);
-    ESP_LOGI(TAG, "Booting HackOS phase 3 – FreeRTOS architecture");
+    ESP_LOGI(TAG, "Booting HackOS phase 4 – VFS & Asset Manager");
 
     // ── FreeRTOS core infrastructure ──────────────────────────────────────
     const bool busOk = hackos::core::HardwareBus::init();
@@ -80,6 +82,16 @@ void setup()
     ESP_LOGI(TAG, "DisplayManager init: %s", displayOk ? "OK" : "FAIL");
     ESP_LOGI(TAG, "InputManager init: %s", inputOk ? "OK" : "FAIL");
     ESP_LOGI(TAG, "StorageManager mount: %s (%s)", storageOk ? "OK" : "FAIL", StorageManager::instance().lastError());
+
+    // ── VFS & folder structure ────────────────────────────────────────────
+    const bool vfsOk = hackos::storage::VirtualFS::instance().init();
+    ESP_LOGI(TAG, "VirtualFS init: %s (SD=%s, Flash=%s)", vfsOk ? "OK" : "FAIL",
+             hackos::storage::VirtualFS::instance().sdMounted() ? "yes" : "no",
+             hackos::storage::VirtualFS::instance().flashMounted() ? "yes" : "no");
+
+    const bool foldersOk = hackos::storage::StorageInit::ensureFolderStructure();
+    ESP_LOGI(TAG, "SD folder structure: %s", foldersOk ? "OK" : "INCOMPLETE");
+
     ESP_LOGI(TAG, "EventSystem init: %s", eventSystemOk ? "OK" : "FAIL");
     ESP_LOGI(TAG, "AppManager init: %s", appManagerOk ? "OK" : "FAIL");
 
