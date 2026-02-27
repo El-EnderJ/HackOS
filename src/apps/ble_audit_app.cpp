@@ -601,24 +601,34 @@ private:
         esp_bt_controller_mem_release(ESP_BT_MODE_CLASSIC_BT);
 
         esp_bt_controller_config_t btCfg = BT_CONTROLLER_INIT_CONFIG_DEFAULT();
-        if (esp_bt_controller_init(&btCfg) != ESP_OK)
+        esp_err_t err = esp_bt_controller_init(&btCfg);
+        if (err != ESP_OK)
         {
-            ESP_LOGE(TAG_BLE, "BT controller init failed");
+            ESP_LOGE(TAG_BLE, "BT controller init failed: %d", err);
             return;
         }
-        if (esp_bt_controller_enable(ESP_BT_MODE_BLE) != ESP_OK)
+        err = esp_bt_controller_enable(ESP_BT_MODE_BLE);
+        if (err != ESP_OK)
         {
-            ESP_LOGE(TAG_BLE, "BT controller enable failed");
+            ESP_LOGE(TAG_BLE, "BT controller enable failed: %d", err);
+            esp_bt_controller_deinit();
             return;
         }
-        if (esp_bluedroid_init() != ESP_OK)
+        err = esp_bluedroid_init();
+        if (err != ESP_OK)
         {
-            ESP_LOGE(TAG_BLE, "Bluedroid init failed");
+            ESP_LOGE(TAG_BLE, "Bluedroid init failed: %d", err);
+            esp_bt_controller_disable();
+            esp_bt_controller_deinit();
             return;
         }
-        if (esp_bluedroid_enable() != ESP_OK)
+        err = esp_bluedroid_enable();
+        if (err != ESP_OK)
         {
-            ESP_LOGE(TAG_BLE, "Bluedroid enable failed");
+            ESP_LOGE(TAG_BLE, "Bluedroid enable failed: %d", err);
+            esp_bluedroid_deinit();
+            esp_bt_controller_disable();
+            esp_bt_controller_deinit();
             return;
         }
 
@@ -691,6 +701,7 @@ private:
 
         // Load the selected payload
         const size_t idx = static_cast<size_t>(selectedPayload_);
+        // ESP-IDF API takes non-const pointer but does not modify the data
         esp_ble_gap_config_adv_data_raw(
             const_cast<uint8_t *>(PAYLOADS[idx].data),
             static_cast<uint32_t>(PAYLOADS[idx].length));
