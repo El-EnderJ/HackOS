@@ -7,6 +7,8 @@
  *  - Hands control to the FreeRTOS scheduler; the infinite loop uses
  *    `vTaskDelay` instead of a bare `delay()` so other RTOS tasks receive
  *    CPU time during the idle period.
+ *  - Boots the FreeRTOS SystemCore (ThreadManager, HardwareBus mutexes,
+ *    MessageBus, and PowerManager).
  *
  * @note All peripheral drivers are initialised in their own modules
  *       (see src/hardware/) and will be wired in during subsequent phases.
@@ -27,7 +29,10 @@
 #include "config.h"
 #include "core/app_manager.h"
 #include "core/event_system.h"
+#include "core/message_bus.h"
+#include "core/power_manager.h"
 #include "core/state_machine.h"
+#include "core/system_core.h"
 #include "hardware/display.h"
 #include "hardware/input.h"
 #include "hardware/storage.h"
@@ -53,8 +58,18 @@ void setup()
 {
     Serial.begin(SERIAL_BAUD);
     esp_log_level_set(TAG, ESP_LOG_DEBUG);
-    ESP_LOGI(TAG, "Booting HackOS phase 2 HAL");
+    ESP_LOGI(TAG, "Booting HackOS phase 3 – FreeRTOS architecture");
 
+    // ── FreeRTOS core infrastructure ──────────────────────────────────────
+    const bool busOk = hackos::core::HardwareBus::init();
+    const bool msgBusOk = hackos::core::MessageBus::instance().init();
+    const bool powerOk = hackos::core::PowerManager::instance().init(PIN_JOY_SW);
+
+    ESP_LOGI(TAG, "HardwareBus init: %s", busOk ? "OK" : "FAIL");
+    ESP_LOGI(TAG, "MessageBus init: %s", msgBusOk ? "OK" : "FAIL");
+    ESP_LOGI(TAG, "PowerManager init: %s", powerOk ? "OK" : "FAIL");
+
+    // ── Legacy HAL initialisation ─────────────────────────────────────────
     const bool displayOk = DisplayManager::instance().init();
     const bool inputOk = InputManager::instance().init();
     const bool storageOk = StorageManager::instance().mount();
@@ -100,5 +115,9 @@ void loop()
 {
     EventSystem::instance().dispatchPendingEvents();
     AppManager::instance().loop();
+
+    // Let the PowerManager evaluate idle-timeout / sleep policy.
+    hackos::core::PowerManager::instance().tick();
+
     vTaskDelay(LOOP_DELAY_TICKS);
 }
