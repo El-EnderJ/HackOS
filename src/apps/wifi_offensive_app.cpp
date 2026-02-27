@@ -53,6 +53,8 @@ static constexpr uint8_t DEAUTH_BURST_SIZE    = 5U;
 static constexpr uint8_t MAX_DEAUTH_BURSTS    = 100U;
 static constexpr uint8_t BEACON_FRAMES_PER_TICK = 5U;
 static constexpr size_t  AP_LABEL_BUF_LEN     = 32U;
+static constexpr uint16_t DEAUTH_REASON_CLASS3 = 7U; ///< Class-3 frame from non-associated station
+static constexpr uint8_t BEACON_MAC_PREFIX[4]  = {0xDEU, 0xADU, 0xBEU, 0xEFU};
 
 // ── State machine ─────────────────────────────────────────────────────────────
 
@@ -94,6 +96,9 @@ static volatile uint32_t g_handshakes     = 0U;
 class WiFiOffensiveApp;
 static WiFiOffensiveApp *g_appInstance = nullptr;
 
+// Forward declaration – defined after the app class.
+static void storeDiscoveredAp(const hackos::radio::MgmtFrameInfo &info);
+
 // ── Promiscuous RX callback (runs in WiFi task context) ──────────────────────
 
 static void IRAM_ATTR promiscuousRxCb(void *buf, wifi_promiscuous_pkt_type_t type)
@@ -131,13 +136,6 @@ static void IRAM_ATTR promiscuousRxCb(void *buf, wifi_promiscuous_pkt_type_t typ
                 (info.subtype == SUBTYPE_BEACON ||
                  info.subtype == SUBTYPE_PROBE_RESP))
             {
-                // Defer heavy work; just mark that a new AP was seen.
-                // We store into the app's discovered-AP table directly;
-                // since on_update() only reads the table and the callback
-                // only appends/updates, the worst case is a partial read
-                // of a single entry – acceptable for a pentest tool UI.
-                // Full description is inside the app class below.
-                extern void storeDiscoveredAp(const MgmtFrameInfo &info);
                 storeDiscoveredAp(info);
             }
         }
@@ -628,7 +626,7 @@ private:
 
         uint8_t frame[hackos::radio::DEAUTH_FRAME_LEN];
         const size_t frameLen = hackos::radio::buildDeauthFrame(
-            frame, ap.bssid, BROADCAST, 7U);
+            frame, ap.bssid, BROADCAST, DEAUTH_REASON_CLASS3);
 
         if (frameLen > 0U)
         {
@@ -678,7 +676,8 @@ private:
         }
 
         // Generate a pseudo-random MAC base for each SSID
-        uint8_t srcMac[6] = {0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0x00};
+        uint8_t srcMac[6];
+        std::memcpy(srcMac, BEACON_MAC_PREFIX, 4U);
 
         uint8_t frame[128];
 
