@@ -594,7 +594,7 @@ private:
                 mainMenu_.setItems(IR_MENU_LABELS, IR_MENU_COUNT);
                 return;
             }
-            editNibbleIdx_ = (editNibbleIdx_ - 1U) % HEX_NIBBLES;
+            editNibbleIdx_ = editNibbleIdx_ - 1U;
             needsRedraw_ = true;
         }
         else if (input == InputManager::InputEvent::BUTTON_PRESS)
@@ -633,8 +633,8 @@ private:
         DisplayManager::instance().drawText(2, 24, "Name:");
 
         // Show current name being built
-        char nameBuf[20];
-        std::snprintf(nameBuf, sizeof(nameBuf), "%s%c_",
+        char nameBuf[24];
+        std::snprintf(nameBuf, sizeof(nameBuf), "%.14s%c_",
                       saveName_, saveNameCursorChar_);
         DisplayManager::instance().drawText(2, 34, nameBuf);
 
