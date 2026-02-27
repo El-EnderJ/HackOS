@@ -60,10 +60,10 @@ enum ViewId : uint32_t
 // Custom app-event IDs forwarded through the SceneManager
 enum AppEvent : uint32_t
 {
-    EVENT_START_CAPTURE = 100U,
-    EVENT_VIEW_LAST     = 101U,
-    EVENT_BACK          = 102U,
-    EVENT_SIGNAL_FOUND  = 200U,
+    EVENT_START_CAPTURE    = 100U,
+    EVENT_VIEW_LAST_SIGNAL = 101U,
+    EVENT_BACK             = 102U,
+    EVENT_SIGNAL_FOUND     = 200U,
 };
 
 // ── Menu items ───────────────────────────────────────────────────────────────
@@ -305,7 +305,7 @@ public:
                 }
                 else if (sel == 1U)
                 {
-                    sceneManager_->handleEvent(EVENT_VIEW_LAST);
+                    sceneManager_->handleEvent(EVENT_VIEW_LAST_SIGNAL);
                 }
                 else
                 {
@@ -452,7 +452,7 @@ private:
             app->sceneManager()->navigateTo(SCENE_CAPTURE);
             return true;
         }
-        if (eventId == EVENT_VIEW_LAST)
+        if (eventId == EVENT_VIEW_LAST_SIGNAL)
         {
             app->sceneManager()->navigateTo(SCENE_RESULT);
             return true;
