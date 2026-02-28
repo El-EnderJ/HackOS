@@ -48,4 +48,5 @@ enum : int32_t
     XP_DASHBOARD_OP = 15,
     XP_SIGNAL_ANALYZE = 15,
     XP_PLUGIN_LOAD    = 10,
+    XP_PWN_CAPTURE    = 30,
 };
