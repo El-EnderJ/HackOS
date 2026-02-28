@@ -1243,6 +1243,8 @@ private:
             {
                 transitionTo(BadBtState::DONE);
                 ESP_LOGI(TAG_BBT, "Script execution complete");
+                EventSystem::instance().postEvent(
+                    {EventType::EVT_XP_EARNED, XP_BADBT_RUN, 0, nullptr});
             }
             return;
         }

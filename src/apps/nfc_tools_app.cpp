@@ -469,6 +469,8 @@ private:
         if (dumpSector_ >= NFCReader::MIFARE_1K_SECTORS)
         {
             transitionTo(NFCState::DUMP_DONE);
+            EventSystem::instance().postEvent(
+                {EventType::EVT_XP_EARNED, XP_NFC_READ, 0, nullptr});
             return;
         }
 

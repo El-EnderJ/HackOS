@@ -376,6 +376,8 @@ private:
         statusBar_.setConnectivity(false, true);
         transitionTo(WiFiState::AP_LIST);
         ESP_LOGI(TAG_WIFI, "Scan done: %u AP(s)", static_cast<unsigned>(apCount_));
+        EventSystem::instance().postEvent(
+            {EventType::EVT_XP_EARNED, XP_WIFI_SCAN, 0, nullptr});
     }
 
     // ── AP label management (heap) ────────────────────────────────────────────

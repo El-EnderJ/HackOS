@@ -358,6 +358,9 @@ public:
         evt.payload = nullptr;
         (void)hackos::core::MessageBus::instance().publish(evt);
 
+        EventSystem::instance().postEvent(
+            {EventType::EVT_XP_EARNED, XP_PORTAL_LOOT, 0, nullptr});
+
         needsRedraw_ = true;
     }
 

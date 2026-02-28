@@ -437,6 +437,11 @@ private:
 
             ESP_LOGI(TAG_RF_APP, "RAW capture stopped – %u pulses",
                      capturedCount_);
+            if (capturedCount_ > 0U)
+            {
+                EventSystem::instance().postEvent(
+                    {EventType::EVT_XP_EARNED, XP_RF_CAPTURE, 0, nullptr});
+            }
         }
     }
 

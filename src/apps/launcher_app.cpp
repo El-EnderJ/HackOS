@@ -3,8 +3,10 @@
 #include "core/app_manager.h"
 #include "core/event.h"
 #include "core/event_system.h"
+#include "core/experience_manager.h"
 #include "hardware/display.h"
 #include "hardware/input.h"
+#include "ui/hackbot_widget.h"
 #include "ui/widgets.h"
 
 namespace
@@ -17,6 +19,7 @@ public:
           menu_(0, 12, 128, 40, 4),
           progressBar_(0, 54, 128, 10),
           dialog_(14, 16, 100, 30),
+          hackBot_(80, 12, 46, 42),
           appNames_{},
           appCount_(0U)
     {
@@ -35,6 +38,7 @@ public:
         statusBar_.setBatteryLevel(85U);
         statusBar_.setTime(12U, 34U);
         dialog_.setText("HackOS", "Ready");
+        updateHackBot();
         (void)EventSystem::instance().subscribe(this);
     }
 
@@ -42,7 +46,10 @@ public:
 
     void onDraw() override
     {
-        if (!statusBar_.isDirty() && !menu_.isDirty() && !progressBar_.isDirty() && !dialog_.isDirty())
+        updateHackBot();
+
+        if (!statusBar_.isDirty() && !menu_.isDirty() && !progressBar_.isDirty()
+            && !dialog_.isDirty() && !hackBot_.isDirty())
         {
             return;
         }
@@ -51,6 +58,7 @@ public:
         statusBar_.draw();
         menu_.draw();
         progressBar_.draw();
+        hackBot_.draw();
         dialog_.draw();
         DisplayManager::instance().present();
 
@@ -58,6 +66,7 @@ public:
         menu_.clearDirty();
         progressBar_.clearDirty();
         dialog_.clearDirty();
+        hackBot_.clearDirty();
     }
 
     void onEvent(Event *event) override
@@ -99,8 +108,26 @@ private:
     MenuListView menu_;
     ProgressBar progressBar_;
     DialogBox dialog_;
+    HackBotWidget hackBot_;
     const char *appNames_[MAX_APPS];
     size_t appCount_;
+
+    void updateHackBot()
+    {
+        auto &xp = ExperienceManager::instance();
+        hackBot_.setLevel(xp.level());
+        const uint32_t nextLvl = xp.xpForNextLevel();
+        const uint8_t pct = (nextLvl > 0U)
+                                ? static_cast<uint8_t>((xp.xp() * 100U) / nextLvl)
+                                : 0U;
+        hackBot_.setXPProgress(pct);
+
+        if (xp.leveledUp())
+        {
+            hackBot_.showLevelUp();
+            xp.clearLevelUp();
+        }
+    }
 
     void updateProgressIndicator()
     {

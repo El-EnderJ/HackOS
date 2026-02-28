@@ -251,7 +251,8 @@ public:
           selectedPayload_(PayloadType::APPLE_AIRPODS),
           spamCount_(0U),
           lastMacRotateMs_(0U),
-          deviceCount_(0U)
+          deviceCount_(0U),
+          xpAwarded_(false)
     {
         std::memset(devices_, 0, sizeof(devices_));
         std::memset(scanLabels_, 0, sizeof(scanLabels_));
@@ -301,6 +302,13 @@ public:
             dev.name[DEVICE_NAME_MAX_LEN] = '\0';
             dev.suspicious = isSuspiciousDevice(dev.name);
             ++deviceCount_;
+
+            if (deviceCount_ == 1U && !xpAwarded_)
+            {
+                xpAwarded_ = true;
+                EventSystem::instance().postEvent(
+                    {EventType::EVT_XP_EARNED, XP_BLE_SCAN, 0, nullptr});
+            }
         }
     }
 
@@ -419,6 +427,7 @@ private:
     // Scanner state
     BleDevice  devices_[MAX_SCAN_DEVICES];
     size_t     deviceCount_;
+    bool       xpAwarded_; ///< Prevents repeated XP awards per app session
 
     // Scan label strings for display
     char       *scanLabels_[MAX_SCAN_DEVICES];
