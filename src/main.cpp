@@ -50,6 +50,7 @@
 #include "core/plugin_manager.h"
 #include "core/power_manager.h"
 #include "core/state_machine.h"
+#include "core/stealth_manager.h"
 #include "core/system_core.h"
 #include "hardware/display.h"
 #include "hardware/input.h"
@@ -154,6 +155,10 @@ void setup()
                  static_cast<unsigned>(loaded), static_cast<unsigned>(registered));
     }
 
+    // ── Stealth / lock-screen subsystem ─────────────────────────────────
+    const bool stealthOk = hackos::core::StealthManager::instance().init();
+    ESP_LOGI(TAG, "StealthManager init: %s", stealthOk ? "OK" : "FAIL");
+
     (void)AppManager::instance().launchApp("launcher");
 
     const uint32_t heapSize = ESP.getHeapSize();
@@ -174,6 +179,10 @@ void setup()
 void loop()
 {
     EventSystem::instance().dispatchPendingEvents();
+
+    // Stealth layer: evaluate auto-lock and draw lock/panic screen.
+    hackos::core::StealthManager::instance().tick();
+
     AppManager::instance().loop();
 
     // Let the PowerManager evaluate idle-timeout / sleep policy.

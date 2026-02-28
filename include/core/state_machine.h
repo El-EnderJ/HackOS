@@ -8,6 +8,7 @@ enum class GlobalState
     SPLASH,
     LAUNCHER,
     APP_RUNNING,
+    LOCKED,
 };
 
 class StateMachine
