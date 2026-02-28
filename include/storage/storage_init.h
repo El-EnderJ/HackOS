@@ -12,6 +12,7 @@
  *  - `/ext/captures`  – PCAP / RF raw captures
  *  - `/ext/assets`    – icons, images (XBM)
  *  - `/ext/nfc/amiibo`– Amiibo NTAG215 binary dumps
+ *  - `/ext/badbt`    – BadBT DuckyScript payloads
  */
 
 #pragma once
@@ -37,7 +38,7 @@ public:
 
 private:
     /// Number of required directories.
-    static constexpr size_t DIR_COUNT = 9U;
+    static constexpr size_t DIR_COUNT = 10U;
 
     /// Paths that must exist on the SD card (VFS virtual paths).
     static const char *const REQUIRED_DIRS[DIR_COUNT];
