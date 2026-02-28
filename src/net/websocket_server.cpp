@@ -27,7 +27,6 @@ WebSocketServer &WebSocketServer::instance()
 
 WebSocketServer::WebSocketServer()
     : server_(nullptr)
-    , clientCount_(0U)
 {
     for (size_t i = 0U; i < MAX_CLIENTS; ++i)
     {

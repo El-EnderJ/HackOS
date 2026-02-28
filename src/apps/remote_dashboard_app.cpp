@@ -591,7 +591,6 @@ let nfcDump=null;
 function nfcLoad(){
 let path=document.getElementById('nfc-path').value.trim();
 if(!path){document.getElementById('nfc-log').textContent='Enter a file path';return;}
-api('/api/files/download?path='+encodeURIComponent(path)).then(function(r){return r;}).catch(function(){});
 fetch('/api/files/download?path='+encodeURIComponent(path)).then(function(r){return r.arrayBuffer();}).then(function(ab){
 nfcDump=new Uint8Array(ab);renderNfcHex();
 document.getElementById('nfc-log').textContent='Loaded '+nfcDump.length+' bytes from '+path;
@@ -636,23 +635,23 @@ function initTerm(){
 if(termWs&&termWs.readyState<=1)return;
 let out=document.getElementById('term-output');
 termWs=new WebSocket('ws://'+location.host+'/ws');
-termWs.onopen=function(){out.textContent+='[Connected to HackOS Terminal]\\n';};
+termWs.onopen=function(){out.textContent+='[Connected to HackOS Terminal]\n';};
 termWs.onmessage=function(e){
-try{let m=JSON.parse(e.data);if(m.type==='term_out'){out.textContent+=m.text+'\\n';out.scrollTop=out.scrollHeight;}}catch(err){}
+try{let m=JSON.parse(e.data);if(m.type==='term_out'){out.textContent+=m.text+'\n';out.scrollTop=out.scrollHeight;}}catch(err){}
 };
-termWs.onerror=function(){out.textContent+='[WS Error]\\n';};
+termWs.onerror=function(){out.textContent+='[WS Error]\n';};
 }
 function termSend(){
 let inp=document.getElementById('term-input');let cmd=inp.value.trim();
 if(!cmd||!termWs)return;
-document.getElementById('term-output').textContent+='> '+cmd+'\\n';
+document.getElementById('term-output').textContent+='> '+cmd+'\n';
 termWs.send(JSON.stringify({type:'term_cmd',cmd:cmd}));
 inp.value='';
 }
 function termBtn(b){
 if(!termWs)return;
 termWs.send(JSON.stringify({type:'term_btn',btn:b}));
-document.getElementById('term-output').textContent+='['+b.toUpperCase()+']\\n';
+document.getElementById('term-output').textContent+='['+b.toUpperCase()+']\n';
 }
 loadStatus();
 </script>

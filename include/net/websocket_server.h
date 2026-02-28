@@ -75,7 +75,6 @@ private:
 
     httpd_handle_t server_;
     int clients_[MAX_CLIENTS];
-    size_t clientCount_;
 };
 
 /// Internal handler – must be visible to register with httpd.
