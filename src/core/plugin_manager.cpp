@@ -179,8 +179,11 @@ private:
             snprintf(resultMsg_, sizeof(resultMsg_), "Freq: %ld", static_cast<long>(act.value));
             break;
         case PluginActionType::DELAY_MS:
-            delay(act.value > 5000 ? 5000 : act.value);
-            snprintf(resultMsg_, sizeof(resultMsg_), "Waited %ldms", static_cast<long>(act.value));
+            if (act.value > 0)
+            {
+                delay(act.value > 5000 ? 5000 : act.value);
+            }
+            snprintf(resultMsg_, sizeof(resultMsg_), "Waited %ldms", static_cast<long>(act.value > 5000 ? 5000 : (act.value > 0 ? act.value : 0)));
             break;
         case PluginActionType::LOG_MSG:
             ESP_LOGI(TAG_PM, "Plugin log: %s", act.label);
@@ -471,6 +474,17 @@ bool PluginManager::parsePluginFile(const char *path, PluginInfo &info)
         return false;
     }
 
+    // Validate name: only alphanumeric, underscore, hyphen
+    for (size_t i = 0U; info.name[i] != '\0'; ++i)
+    {
+        char c = info.name[i];
+        if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+              (c >= '0' && c <= '9') || c == '_' || c == '-'))
+        {
+            return false;
+        }
+    }
+
     // Optional fields with defaults
     if (!jsonGetString(buf, "label", info.label, sizeof(info.label)))
     {
@@ -620,7 +634,12 @@ size_t PluginManager::parseActions(const char *json, PluginAction *actions,
         jsonGetString(objBuf, "label", act.label, sizeof(act.label));
         jsonGetInt(objBuf, "\"pin\"", act.pin);
         jsonGetInt(objBuf, "\"value\"", act.value);
-        jsonGetInt(objBuf, "\"freq\"", act.value); // freq overwrites value
+        // "freq" is an alias for "value" in pwm_tone actions
+        int32_t freqVal = 0;
+        if (jsonGetInt(objBuf, "\"freq\"", freqVal))
+        {
+            act.value = freqVal;
+        }
         jsonGetInt(objBuf, "\"duration\"", act.duration);
 
         if (act.type != PluginActionType::NONE && act.label[0] != '\0')

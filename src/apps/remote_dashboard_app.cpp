@@ -316,7 +316,7 @@ h+='</div></div>';
 document.getElementById('plugin-grid').innerHTML=h;
 });
 }
-function esc(s){let d=document.createElement('div');d.textContent=s;return d.innerHTML;}
+function esc(s){let d=document.createElement('div');d.textContent=s;return d.innerHTML.replace(/'/g,'&#39;').replace(/"/g,'&quot;');}
 function togglePlugin(n,en){
 api('/api/plugins/toggle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:n,enabled:en})}).then(d=>{
 document.getElementById('plugin-log').textContent=d.ok?'Plugin '+(en?'enabled':'disabled'):'Error: '+(d.error||'unknown');
