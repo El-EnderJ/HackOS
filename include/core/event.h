@@ -9,6 +9,7 @@ enum class EventType : uint8_t
     EVT_WIFI_SCAN_DONE,
     EVT_APP,
     EVT_XP_EARNED,
+    EVT_GHOSTNET,
 };
 
 struct Event
@@ -42,4 +43,5 @@ enum : int32_t
     XP_SUBGHZ_OP   = 25,
     XP_BADBT_RUN   = 20,
     XP_PORTAL_LOOT = 30,
+    XP_GHOSTNET_OP = 20,
 };
