@@ -25,6 +25,7 @@ const char *const StorageInit::REQUIRED_DIRS[DIR_COUNT] = {
     "/ext/dashboard",
     "/ext/plugins",
     "/ext/pwnmode",
+    "/ext/pcap",
 };
 
 // ── Public API ───────────────────────────────────────────────────────────────
