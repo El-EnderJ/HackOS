@@ -29,11 +29,7 @@ bool StorageManager::mount()
     }
 
     SPI.begin();
-    SPI.beginTransaction(SD_SPI_SETTINGS);
-    const bool ok = SD.begin(PIN_SD_CS, SPI);
-    SPI.endTransaction();
-
-    if (!ok)
+    if (!SD.begin(PIN_SD_CS, SPI))
     {
         lastError_ = "Failed to mount SD";
         mounted_ = false;

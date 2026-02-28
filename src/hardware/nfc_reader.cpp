@@ -55,10 +55,8 @@ bool NFCReader::init()
         return true;
     }
 
-    SPI.beginTransaction(NFC_SPI_SETTINGS);
     nfc_.begin();
     const uint32_t version = nfc_.getFirmwareVersion();
-    SPI.endTransaction();
 
     if (version == 0U)
     {
@@ -70,9 +68,7 @@ bool NFCReader::init()
              static_cast<unsigned long>((version >> 16) & 0xFFUL),
              static_cast<unsigned long>((version >> 8) & 0xFFUL));
 
-    SPI.beginTransaction(NFC_SPI_SETTINGS);
     nfc_.SAMConfig();
-    SPI.endTransaction();
     initialized_ = true;
     return true;
 }
@@ -323,25 +319,8 @@ bool NFCReader::emulateNtag213Url(const char *url, uint8_t prefixCode,
         return false;
     }
 
-    // PN532 target mode command parameters for NFC Forum Type 2 Tag emulation
-    // SENS_RES (ATQA), NFCID1, SEL_RES (SAK)
-    static const uint8_t atr[] = {
-        0x04U, 0x04U, // SENS_RES (NTAG213-like)
-        0x01U, 0x02U, 0x03U, // NFCID1t (3 bytes – PN532 fills rest)
-        0x00U,        // SEL_RES (SAK = 0x00 for Type 2 Tag)
-    };
-
-    // Felica / DEP parameters (not used but required by API)
-    static const uint8_t felicaParams[] = {
-        0x01U, 0xFEU, 0xA2U, 0xA3U, 0xA4U, 0xA5U,
-        0xA6U, 0xA7U, 0xC0U, 0xC1U, 0xC2U, 0xC3U,
-        0xC4U, 0xC5U, 0xC6U, 0xC7U, 0xFFU, 0xFFU,
-    };
-
-    static const uint8_t nfcid3[] = {
-        0x01U, 0xFEU, 0xA2U, 0xA3U, 0xA4U,
-        0xA5U, 0xA6U, 0xA7U, 0xC0U, 0xC1U,
-    };
+    // Note: AsTarget() uses its own hardcoded SENS_RES/NFCID1/SEL_RES
+    // parameters internally; custom ATR params cannot be applied here.
 
     // Set PN532 as target (passive only, 106 kbps)
     SPI.beginTransaction(NFC_SPI_SETTINGS);
@@ -452,28 +431,9 @@ bool NFCReader::emulateNtag215(const uint8_t *dump, uint16_t timeoutMs)
 
     // Extract UID bytes from the dump to use in SENS_RES/NFCID1
     // NTAG215 page 0: UID0 UID1 UID2 BCC0, page 1: UID3 UID4 UID5 UID6
-    const uint8_t atr[] = {
-        0x44U, 0x00U,                         // SENS_RES (NTAG215)
-        dump[0], dump[1], dump[2],             // NFCID1t (3 bytes)
-        0x00U,                                 // SEL_RES (SAK = 0x00, Type 2 Tag)
-    };
-
-    static const uint8_t felicaParams[] = {
-        0x01U, 0xFEU, 0xA2U, 0xA3U, 0xA4U, 0xA5U,
-        0xA6U, 0xA7U, 0xC0U, 0xC1U, 0xC2U, 0xC3U,
-        0xC4U, 0xC5U, 0xC6U, 0xC7U, 0xFFU, 0xFFU,
-    };
-
-    static const uint8_t nfcid3[] = {
-        0x01U, 0xFEU, 0xA2U, 0xA3U, 0xA4U,
-        0xA5U, 0xA6U, 0xA7U, 0xC0U, 0xC1U,
-    };
-
-    // Suppress unused variable warnings – params are kept for reference
-    // but AsTarget() uses its own hardcoded configuration
-    (void)atr;
-    (void)felicaParams;
-    (void)nfcid3;
+    // Note: AsTarget() uses its own hardcoded SENS_RES/NFCID1/SEL_RES/Felica
+    // parameters internally; the PN532 library does not expose a configurable
+    // tgInitAsTarget() API, so custom ATR params cannot be applied here.
     (void)timeoutMs;
 
     SPI.beginTransaction(NFC_SPI_SETTINGS);

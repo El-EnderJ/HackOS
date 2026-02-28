@@ -245,8 +245,8 @@ PluginManager::PluginManager()
 
 size_t PluginManager::scanAndLoad()
 {
-    const size_t heapBefore = heap_caps_get_free_size(MALLOC_CAP_8BIT);
-    ESP_LOGI(TAG_PM, "scanAndLoad: heap before = %u bytes", static_cast<unsigned>(heapBefore));
+    ESP_LOGI(TAG_PM, "scanAndLoad: heap before = %u bytes",
+             static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_8BIT)));
 
     auto &vfs = storage::VirtualFS::instance();
 
@@ -309,11 +309,8 @@ size_t PluginManager::scanAndLoad()
     }
 
     ESP_LOGI(TAG_PM, "Scan complete: %u plugins loaded", static_cast<unsigned>(loaded));
-
-    const size_t heapAfter = heap_caps_get_free_size(MALLOC_CAP_8BIT);
-    ESP_LOGI(TAG_PM, "scanAndLoad: heap after = %u bytes (delta = %d)",
-             static_cast<unsigned>(heapAfter),
-             static_cast<int>(heapAfter) - static_cast<int>(heapBefore));
+    ESP_LOGI(TAG_PM, "scanAndLoad: heap after = %u bytes",
+             static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_8BIT)));
 
     return loaded;
 }
@@ -353,8 +350,8 @@ size_t PluginManager::registerAll()
 
 size_t PluginManager::reload()
 {
-    const size_t heapBefore = heap_caps_get_free_size(MALLOC_CAP_8BIT);
-    ESP_LOGI(TAG_PM, "reload: heap before = %u bytes", static_cast<unsigned>(heapBefore));
+    ESP_LOGI(TAG_PM, "reload: heap before = %u bytes",
+             static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_8BIT)));
 
     size_t newPlugins = scanAndLoad();
     if (newPlugins > 0U)
@@ -362,10 +359,8 @@ size_t PluginManager::reload()
         registerAll();
     }
 
-    const size_t heapAfter = heap_caps_get_free_size(MALLOC_CAP_8BIT);
-    ESP_LOGI(TAG_PM, "reload: heap after = %u bytes (delta = %d)",
-             static_cast<unsigned>(heapAfter),
-             static_cast<int>(heapAfter) - static_cast<int>(heapBefore));
+    ESP_LOGI(TAG_PM, "reload: heap after = %u bytes",
+             static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_8BIT)));
 
     return newPlugins;
 }
@@ -424,7 +419,7 @@ bool PluginManager::deletePlugin(const char *name)
         return false;
     }
 
-    const size_t heapBefore = heap_caps_get_free_size(MALLOC_CAP_8BIT);
+    const size_t heapBefore __attribute__((unused)) = heap_caps_get_free_size(MALLOC_CAP_8BIT);
 
     for (size_t i = 0U; i < pluginCount_; ++i)
     {
@@ -448,9 +443,9 @@ bool PluginManager::deletePlugin(const char *name)
                 --pluginCount_;
                 // Clear the now-unused last slot
                 g_pluginSlots[pluginCount_] = nullptr;
-                std::memset(&plugins_[pluginCount_], 0, sizeof(PluginInfo));
+                plugins_[pluginCount_] = PluginInfo{};
 
-                const size_t heapAfter = heap_caps_get_free_size(MALLOC_CAP_8BIT);
+                const size_t heapAfter __attribute__((unused)) = heap_caps_get_free_size(MALLOC_CAP_8BIT);
                 ESP_LOGI(TAG_PM, "Deleted plugin: %s (heap delta = %d)",
                          name,
                          static_cast<int>(heapAfter) - static_cast<int>(heapBefore));
