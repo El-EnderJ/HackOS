@@ -273,9 +273,6 @@ private:
                 R3 * (static_cast<int>(clamped) + 30) / (-60));
 
             // Spread peers around the circle using their index.
-            static constexpr int16_t ANGLES[] = {45, 135, 225, 315, 0, 90, 180, 270};
-            const int16_t angle = ANGLES[plotIdx % 8U];
-            // Approximate cos/sin with fixed values for 8 positions.
             static constexpr int16_t COS8[] = {7, -7, -7, 7, 10, 0, -10, 0};
             static constexpr int16_t SIN8[] = {-7, -7, 7, 7, 0, -10, 0, 10};
             const int16_t px = CX + (COS8[plotIdx % 8U] * dist) / 10;
@@ -353,11 +350,18 @@ private:
         }
         else
         {
-            const size_t start = (total > CHAT_VISIBLE_ROWS + chatScrollOffset_)
-                                     ? total - CHAT_VISIBLE_ROWS - chatScrollOffset_
-                                     : 0U;
+            const size_t maxScroll = (total > CHAT_VISIBLE_ROWS)
+                                         ? (total - CHAT_VISIBLE_ROWS)
+                                         : 0U;
+            const size_t clampedOffset = (chatScrollOffset_ > maxScroll)
+                                             ? maxScroll
+                                             : chatScrollOffset_;
+            const size_t start = total - CHAT_VISIBLE_ROWS - clampedOffset;
+            const size_t safeStart = (total > CHAT_VISIBLE_ROWS + clampedOffset)
+                                         ? start
+                                         : 0U;
             int16_t y = 20;
-            for (size_t i = start; i < total && y < 52; ++i)
+            for (size_t i = safeStart; i < total && y < 52; ++i)
             {
                 const auto *msg = gn.chatAt(i);
                 if (msg != nullptr)
@@ -520,7 +524,10 @@ private:
         else if (input == InputManager::InputEvent::UP)
         {
             // Scroll chat up.
-            if (chatScrollOffset_ < gn.chatCount())
+            const size_t maxScroll = (gn.chatCount() > CHAT_VISIBLE_ROWS)
+                                         ? (gn.chatCount() - CHAT_VISIBLE_ROWS)
+                                         : 0U;
+            if (chatScrollOffset_ < maxScroll)
             {
                 ++chatScrollOffset_;
             }

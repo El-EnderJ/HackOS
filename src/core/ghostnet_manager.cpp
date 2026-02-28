@@ -439,10 +439,10 @@ void GhostNetManager::onDataRecv(const uint8_t *mac,
 
     auto &mgr = instance();
     // Approximate RSSI – ESP-NOW does not expose RSSI directly in this
-    // callback, so we use a placeholder.  Real RSSI can be obtained by
-    // hooking the WiFi promiscuous callback, which is left for a future
-    // enhancement.
-    constexpr int8_t estimatedRssi = -50;
+    // callback, so we use a medium-range placeholder.  Real RSSI can be
+    // obtained by hooking the WiFi promiscuous callback, which is left
+    // for a future enhancement.
+    constexpr int8_t estimatedRssi = -70;
     mgr.handlePacket(mac, data, len, estimatedRssi);
 }
 
