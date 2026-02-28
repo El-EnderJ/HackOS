@@ -30,6 +30,7 @@
 #include "apps/ble_audit_app.h"
 #include "apps/captive_portal_app.h"
 #include "apps/amiibo_app.h"
+#include "apps/subghz_bruteforcer_app.h"
 #include "apps/wifi_tools_app.h"
 #include "config.h"
 #include "core/app_manager.h"
@@ -116,6 +117,7 @@ void setup()
     (void)AppManager::instance().registerApp("captive_portal", createCaptivePortalApp);
     (void)AppManager::instance().registerApp("ble_audit", createBleAuditApp);
     (void)AppManager::instance().registerApp("amiibo", createAmiiboApp);
+    (void)AppManager::instance().registerApp("subghz_bf", createSubGhzBruteforceApp);
     (void)AppManager::instance().launchApp("launcher");
 
     const uint32_t heapSize = ESP.getHeapSize();
