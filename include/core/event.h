@@ -11,6 +11,7 @@ enum class EventType : uint8_t
     EVT_XP_EARNED,
     EVT_GHOSTNET,
     EVT_REMOTE_CMD,
+    EVT_TOAST, ///< arg0 = duration_ms, data = const char* message
 };
 
 struct Event
