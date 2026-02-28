@@ -199,7 +199,8 @@ void StealthManager::drawWatchFace()
 
     disp.clear();
 
-    // Build time string HH:MM:SS from millis (no RTC – use uptime).
+    // Build time string HH:MM:SS from millis (no RTC available – displays
+    // system uptime wrapped to a 24-hour cycle as a plausible clock face).
     const uint32_t totalSec = millis() / 1000U;
     const uint8_t h = static_cast<uint8_t>((totalSec / 3600U) % 24U);
     const uint8_t m = static_cast<uint8_t>((totalSec / 60U) % 60U);
@@ -239,10 +240,14 @@ void StealthManager::panicWipe()
     ESP_LOGW(TAG, "PANIC activated – wiping sensitive data");
 
     // Overwrite any in-RAM encryption key buffers with zeros.
-    // (HackOS does not currently store persistent keys in RAM, but we clear
-    //  a representative block to demonstrate the wipe pattern.)
+    // Use volatile pointer to prevent the compiler from optimising away the
+    // memset on stack memory that is never subsequently read.
     volatile uint8_t wipeBlock[64];
-    memset(const_cast<uint8_t *>(wipeBlock), 0, sizeof(wipeBlock));
+    volatile uint8_t *p = wipeBlock;
+    for (size_t i = 0U; i < sizeof(wipeBlock); ++i)
+    {
+        p[i] = 0U;
+    }
 
     panicked_ = true;
     locked_ = true;

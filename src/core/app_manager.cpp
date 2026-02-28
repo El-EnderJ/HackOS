@@ -80,8 +80,14 @@ void AppManager::loop()
     auto &stealth = hackos::core::StealthManager::instance();
     if (stealth.isLocked())
     {
-        stealth.handleLockedInput(input);
-        return; // Do not process apps or draw while locked.
+        if (!stealth.handleLockedInput(input))
+        {
+            // Device was just unlocked – fall through to normal processing.
+        }
+        else
+        {
+            return; // Still locked – do not process apps or draw.
+        }
     }
 
     // Any real input resets the auto-lock inactivity timer.
