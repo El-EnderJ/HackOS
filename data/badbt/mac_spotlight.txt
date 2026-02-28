@@ -1,0 +1,11 @@
+REM Mac – Open Terminal via Spotlight
+REM Authorized penetration testing only
+TARGET MAC
+DELAY 500
+GUI SPACE
+DELAY 700
+STRING Terminal
+ENTER
+DELAY 1000
+STRING whoami
+ENTER
