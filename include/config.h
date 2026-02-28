@@ -75,3 +75,23 @@ constexpr uint8_t PIN_RF_RX = 16U;
 
 /// @brief PWM-capable pin driving a passive buzzer for audio feedback.
 constexpr uint8_t PIN_BUZZER = 27U;
+
+// ── Hardware Bridge (Logic Analyzer / Signal Generator) ──────────────────────
+
+/// @brief UART RX sniff pin for the Hardware Bridge sniffer.
+constexpr uint8_t PIN_HB_UART_RX = 26U;
+
+/// @brief UART TX sniff pin for the Hardware Bridge sniffer.
+constexpr uint8_t PIN_HB_UART_TX = 33U;
+
+/// @brief I2C data pin for the Hardware Bridge I2C sniffer.
+constexpr uint8_t PIN_HB_SDA = 13U;
+
+/// @brief I2C clock pin for the Hardware Bridge I2C sniffer.
+constexpr uint8_t PIN_HB_SCL = 14U;
+
+/// @brief ADC input pin for the Hardware Bridge voltmeter (input-only).
+constexpr uint8_t PIN_HB_ADC = 36U;
+
+/// @brief PWM output pin for the Hardware Bridge signal generator.
+constexpr uint8_t PIN_HB_SIGGEN = 33U;
