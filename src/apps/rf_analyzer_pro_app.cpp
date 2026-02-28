@@ -3,14 +3,14 @@
  * @brief RFAnalyzerPro – Signal Waterfall Visualizer for advanced 433 MHz
  *        RF analysis.
  *
- * Visualises the 433 MHz RF data pin as a real-time scrolling waterfall
+ * Visualizes the 433 MHz RF data pin as a real-time scrolling waterfall
  * (spectrogram).  Each horizontal line of pixels represents one snapshot in
  * time: black (lit) pixels denote signal-HIGH, white (off) pixels denote
  * signal-LOW.  Rows scroll downward so the newest sample is always at the
  * top.
  *
  * Features:
- *  - Fast Sampling: optimised digital bit-banging of PIN_RF_RX at the
+ *  - Fast Sampling: optimized digital bit-banging of PIN_RF_RX at the
  *    maximum speed the ESP32 GPIO port register allows.
  *  - Waterfall Display: 128×54 pixel scrolling bitmap on the OLED.
  *  - Time Scaling (Zoom): UP / DOWN changes the inter-sample delay so the
