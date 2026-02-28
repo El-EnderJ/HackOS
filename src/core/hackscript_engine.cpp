@@ -214,8 +214,9 @@ void HackScriptEngine::executeCommand(const char *line)
             const size_t msgLen = (msgEnd != nullptr)
                                       ? static_cast<size_t>(msgEnd - msgStart)
                                       : std::strlen(msgStart);
-            char notifyBuf[41];
-            const size_t copyLen = (msgLen < 40U) ? msgLen : 40U;
+            static constexpr size_t NOTIFY_MAX = 40U;
+            char notifyBuf[NOTIFY_MAX + 1U];
+            const size_t copyLen = (msgLen < NOTIFY_MAX) ? msgLen : NOTIFY_MAX;
             std::memcpy(notifyBuf, msgStart, copyLen);
             notifyBuf[copyLen] = '\0';
             ToastManager::instance().show(notifyBuf);

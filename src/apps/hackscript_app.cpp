@@ -115,10 +115,11 @@ public:
             const char *cmd = engine.currentCommand();
             if (cmd != nullptr && cmd[0] != '\0')
             {
-                // Truncate for display
-                char cmdDisp[22];
-                std::strncpy(cmdDisp, cmd, 21U);
-                cmdDisp[21U] = '\0';
+                // Truncate to fit 128px wide OLED (21 chars at 6px each).
+                static constexpr size_t DISPLAY_MAX_CHARS = 21U;
+                char cmdDisp[DISPLAY_MAX_CHARS + 1U];
+                std::strncpy(cmdDisp, cmd, DISPLAY_MAX_CHARS);
+                cmdDisp[DISPLAY_MAX_CHARS] = '\0';
                 d.drawText(0, 28, cmdDisp);
             }
 

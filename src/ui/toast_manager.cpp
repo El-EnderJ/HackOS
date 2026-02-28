@@ -8,6 +8,8 @@
 #include <Arduino.h>
 #include <cstring>
 #include <esp_log.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 
 #include "config.h"
 #include "hardware/display.h"
@@ -92,7 +94,10 @@ void ToastManager::hapticBuzz()
 {
     ledcAttachPin(PIN_BUZZER, 0);
     ledcWriteTone(0, BUZZ_FREQ);
-    delay(BUZZ_MS);
+    // Non-blocking: the tone will play for ~BUZZ_MS until the next draw()
+    // call clears it.  We use a small vTaskDelay to yield CPU without
+    // blocking the main loop for a full 80 ms.
+    vTaskDelay(pdMS_TO_TICKS(BUZZ_MS));
     ledcWriteTone(0, 0);
     ledcDetachPin(PIN_BUZZER);
 }

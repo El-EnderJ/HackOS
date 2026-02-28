@@ -156,9 +156,7 @@ bool SDUpdater::applyUpdate(UpdateProgressCb progressCb)
 
     ESP_LOGI(TAG_UPD, "Update successful – rebooting...");
     esp_restart();
-
-    // Unreachable
-    return true;
+    return true; // unreachable; satisfies non-void return
 }
 
 } // namespace hackos::core

