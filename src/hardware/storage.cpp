@@ -6,6 +6,9 @@
 
 #include "config.h"
 
+// ── SPI Transaction Guard for shared bus ────────────────────────────────────
+static const SPISettings SD_SPI_SETTINGS(4000000, MSBFIRST, SPI_MODE0);
+
 StorageManager &StorageManager::instance()
 {
     static StorageManager manager;
