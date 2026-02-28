@@ -3,6 +3,7 @@
 #include <cstring>
 
 #include "core/state_machine.h"
+#include "core/stealth_manager.h"
 #include "hardware/input.h"
 
 AppManager &AppManager::instance()
@@ -74,8 +75,19 @@ void AppManager::loop()
     // 33 ms keeps UI refresh around 30 FPS, a good tradeoff for OLED I2C bandwidth.
     static constexpr uint32_t FRAME_INTERVAL_MS = 33U;
     const InputManager::InputEvent input = InputManager::instance().readInput();
+
+    // ── Stealth gate: while locked/panicked the rest of the system is dark. ──
+    auto &stealth = hackos::core::StealthManager::instance();
+    if (stealth.isLocked())
+    {
+        stealth.handleLockedInput(input);
+        return; // Do not process apps or draw while locked.
+    }
+
+    // Any real input resets the auto-lock inactivity timer.
     if (input != InputManager::InputEvent::CENTER)
     {
+        stealth.resetInactivityTimer();
         Event inputEvent{EventType::EVT_INPUT, static_cast<int32_t>(input), 0, nullptr};
         (void)EventSystem::instance().postEvent(inputEvent);
     }
