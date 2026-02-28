@@ -650,8 +650,8 @@ private:
         // Build advertisement data from the selected payload
         const size_t idx = static_cast<size_t>(selectedPayload_);
         NimBLEAdvertisementData advData;
-        advData.addData(std::string(reinterpret_cast<const char *>(PAYLOADS[idx].data),
-                                    PAYLOADS[idx].length));
+        advData.addData(const_cast<char *>(reinterpret_cast<const char *>(PAYLOADS[idx].data)),
+                        PAYLOADS[idx].length);
 
         NimBLEAdvertising *pAdv = NimBLEDevice::getAdvertising();
         pAdv->setAdvertisementData(advData);
