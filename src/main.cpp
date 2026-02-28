@@ -42,6 +42,10 @@
 #include "apps/net_forensics_app.h"
 #include "apps/hardware_bridge_app.h"
 #include "apps/wifi_tools_app.h"
+#include "apps/hackscript_app.h"
+#include "apps/cloud_exfil_app.h"
+#include "apps/rolljam_app.h"
+#include "apps/sd_updater_app.h"
 #include "config.h"
 #include "core/app_manager.h"
 #include "core/event_system.h"
@@ -57,6 +61,7 @@
 #include "hardware/storage.h"
 #include "storage/vfs.h"
 #include "storage/storage_init.h"
+#include "ui/toast_manager.h"
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -145,6 +150,10 @@ void setup()
     (void)AppManager::instance().registerApp("signal_lab", createSignalLabApp);
     (void)AppManager::instance().registerApp("net_forensics", createNetForensicsApp);
     (void)AppManager::instance().registerApp("hw_bridge", createHardwareBridgeApp);
+    (void)AppManager::instance().registerApp("hackscript", createHackScriptApp);
+    (void)AppManager::instance().registerApp("cloud_exfil", createCloudExfilApp);
+    (void)AppManager::instance().registerApp("rolljam", createRollJamApp);
+    (void)AppManager::instance().registerApp("sd_updater", createSDUpdaterApp);
 
     // ── Dynamic Plugin Loading ───────────────────────────────────────────
     {
@@ -158,6 +167,9 @@ void setup()
     // ── Stealth / lock-screen subsystem ─────────────────────────────────
     const bool stealthOk = hackos::core::StealthManager::instance().init();
     ESP_LOGI(TAG, "StealthManager init: %s", stealthOk ? "OK" : "FAIL");
+
+    // ── Toast overlay – subscribe to EVT_TOAST events ─────────────────
+    (void)EventSystem::instance().subscribe(&ToastManager::instance());
 
     (void)AppManager::instance().launchApp("launcher");
 
@@ -184,6 +196,9 @@ void loop()
     hackos::core::StealthManager::instance().tick();
 
     AppManager::instance().loop();
+
+    // ── Toast overlay: draw notification pop-ups over the active app. ────
+    ToastManager::instance().draw();
 
     // Let the PowerManager evaluate idle-timeout / sleep policy.
     hackos::core::PowerManager::instance().tick();
