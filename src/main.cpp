@@ -36,6 +36,7 @@
 #include "apps/remote_dashboard_app.h"
 #include "apps/signal_analyzer_app.h"
 #include "apps/plugin_manager_app.h"
+#include "apps/pwn_mode_app.h"
 #include "apps/wifi_tools_app.h"
 #include "config.h"
 #include "core/app_manager.h"
@@ -134,6 +135,7 @@ void setup()
     (void)AppManager::instance().registerApp("remote_dashboard", createRemoteDashboardApp);
     (void)AppManager::instance().registerApp("signal_analyzer", createSignalAnalyzerApp);
     (void)AppManager::instance().registerApp("plugin_manager", createPluginManagerApp);
+    (void)AppManager::instance().registerApp("pwn_mode", createPwnModeApp);
 
     // ── Dynamic Plugin Loading ───────────────────────────────────────────
     {

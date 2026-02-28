@@ -24,6 +24,7 @@ const char *const StorageInit::REQUIRED_DIRS[DIR_COUNT] = {
     "/ext/ghostnet",
     "/ext/dashboard",
     "/ext/plugins",
+    "/ext/pwnmode",
 };
 
 // ── Public API ───────────────────────────────────────────────────────────────
