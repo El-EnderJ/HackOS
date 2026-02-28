@@ -22,6 +22,7 @@ const char *const StorageInit::REQUIRED_DIRS[DIR_COUNT] = {
     "/ext/nfc/amiibo",
     "/ext/badbt",
     "/ext/ghostnet",
+    "/ext/dashboard",
 };
 
 // ── Public API ───────────────────────────────────────────────────────────────

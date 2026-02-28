@@ -14,6 +14,7 @@
  *  - `/ext/nfc/amiibo`– Amiibo NTAG215 binary dumps
  *  - `/ext/badbt`    – BadBT DuckyScript payloads
  *  - `/ext/ghostnet`  – GhostNet ESP-NOW mesh sync data
+ *  - `/ext/dashboard` – Remote dashboard saved data
  */
 
 #pragma once
@@ -39,7 +40,7 @@ public:
 
 private:
     /// Number of required directories.
-    static constexpr size_t DIR_COUNT = 11U;
+    static constexpr size_t DIR_COUNT = 12U;
 
     /// Paths that must exist on the SD card (VFS virtual paths).
     static const char *const REQUIRED_DIRS[DIR_COUNT];
