@@ -210,13 +210,20 @@ public:
         auto &vfs = hackos::storage::VirtualFS::instance();
 
         char path[64];
-        for (uint16_t n = 0U; n < 9999U; ++n)
+        uint16_t n = 0U;
+        for (; n < 9999U; ++n)
         {
             std::snprintf(path, sizeof(path), "%s/%s_%04u.pcap", dir, prefix, n);
             if (!vfs.exists(path))
             {
                 break;
             }
+        }
+
+        if (n >= 9999U)
+        {
+            ESP_LOGE(TAG_NF, "No available PCAP filename in %s", dir);
+            return false;
         }
 
         fs::File f = vfs.open(path, "w");
@@ -616,7 +623,7 @@ private:
         d.drawText(0, 10, "Configure Capture", 1U);
 
         char buf[32];
-        std::snprintf(buf, sizeof(buf), "CH: %u  [UP +/-]", channel_);
+        std::snprintf(buf, sizeof(buf), "CH: %u  [UP]", channel_);
         d.drawText(0, 24, buf, 1U);
 
         if (g_handshakeMode)
