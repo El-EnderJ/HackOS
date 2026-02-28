@@ -14,7 +14,7 @@
  *    Core 0, while the UI continues on Core 1 (Arduino loop).
  *
  * @warning **Legal notice**: Offensive WiFi operations against networks
- * you do not own or have explicit written authorisation to test is illegal.
+ * you do not own or have explicit written authorization to test is illegal.
  */
 
 #include "apps/pwn_mode_app.h"
@@ -56,6 +56,9 @@ static constexpr uint32_t CAPTURE_TASK_STACK   = 4096U;
 static constexpr uint8_t  CAPTURE_TASK_PRIO    = 1U;
 static constexpr uint32_t CAPTURE_LOOP_MS      = 500U;
 static constexpr uint32_t CHANNEL_DWELL_MS     = 2000U; ///< Time per channel while hopping
+static constexpr uint32_t TASK_EXIT_GRACE_MS   = 100U;  ///< Extra delay for task exit
+static constexpr uint8_t  MAX_AUTO_DEAUTH_BURSTS = 20U; ///< Max deauth bursts per target
+static constexpr uint32_t SATISFIED_DISPLAY_TICKS = 50U; ///< Loop iterations to show captured mood
 
 // ── PCAP file header constants (little-endian) ──────────────────────────────
 
@@ -493,7 +496,7 @@ private:
         {
             state_ = PwnState::CAPTURED;
             mood_  = PwnMood::SATISFIED;
-            satisfiedTimer_ = 50U; // ~50 loop iterations (~500ms)
+            satisfiedTimer_ = SATISFIED_DISPLAY_TICKS;
 
             // Award XP
             ExperienceManager::instance().addXP(XP_PWN_CAPTURE);
@@ -503,7 +506,7 @@ private:
         }
 
         // Send deauth bursts (from UI core, quick injection)
-        if (deauthBurstsSent_ < 20U && deauthTarget_ < discoveredCount_)
+        if (deauthBurstsSent_ < MAX_AUTO_DEAUTH_BURSTS && deauthTarget_ < discoveredCount_)
         {
             const PwnAp &ap = discoveredAps_[deauthTarget_];
             (void)esp_wifi_set_channel(ap.channel, WIFI_SECOND_CHAN_NONE);
@@ -636,7 +639,7 @@ private:
         if (captureTaskHandle_ != nullptr)
         {
             // Give the task time to exit its loop
-            vTaskDelay(pdMS_TO_TICKS(CAPTURE_LOOP_MS + 100U));
+            vTaskDelay(pdMS_TO_TICKS(CAPTURE_LOOP_MS + TASK_EXIT_GRACE_MS));
             vTaskDelete(captureTaskHandle_);
             captureTaskHandle_ = nullptr;
             ESP_LOGI(TAG_PWN, "Capture task stopped");
