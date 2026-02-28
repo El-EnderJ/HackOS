@@ -23,6 +23,7 @@ const char *const StorageInit::REQUIRED_DIRS[DIR_COUNT] = {
     "/ext/badbt",
     "/ext/ghostnet",
     "/ext/dashboard",
+    "/ext/plugins",
 };
 
 // ── Public API ───────────────────────────────────────────────────────────────

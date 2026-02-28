@@ -1,0 +1,42 @@
+{
+  "name": "buzzer_tool",
+  "label": "Buzzer Tool",
+  "version": "1.0.0",
+  "author": "HackOS Team",
+  "description": "Play tones on the buzzer (GPIO 27)",
+  "category": "audio",
+  "config": {
+    "pin": 27,
+    "protocol": "PWM"
+  },
+  "actions": [
+    {
+      "type": "pwm_tone",
+      "pin": 27,
+      "freq": 440,
+      "duration": 300,
+      "label": "Play A4 (440Hz)"
+    },
+    {
+      "type": "pwm_tone",
+      "pin": 27,
+      "freq": 880,
+      "duration": 300,
+      "label": "Play A5 (880Hz)"
+    },
+    {
+      "type": "pwm_tone",
+      "pin": 27,
+      "freq": 1000,
+      "duration": 500,
+      "label": "Beep 1kHz"
+    },
+    {
+      "type": "pwm_tone",
+      "pin": 27,
+      "freq": 2000,
+      "duration": 200,
+      "label": "Alert 2kHz"
+    }
+  ]
+}

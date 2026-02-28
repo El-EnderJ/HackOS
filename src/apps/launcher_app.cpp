@@ -103,7 +103,7 @@ public:
     }
 
 private:
-    static constexpr size_t MAX_APPS = 8U;
+    static constexpr size_t MAX_APPS = 32U;
     StatusBar statusBar_;
     MenuListView menu_;
     ProgressBar progressBar_;

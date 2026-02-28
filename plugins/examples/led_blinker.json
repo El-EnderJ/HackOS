@@ -1,0 +1,29 @@
+{
+  "name": "led_blinker",
+  "label": "LED Blinker",
+  "version": "1.0.0",
+  "author": "HackOS Team",
+  "description": "Toggle the onboard LED and GPIO pins",
+  "category": "tools",
+  "config": {
+    "pin": 2,
+    "protocol": "GPIO"
+  },
+  "actions": [
+    {
+      "type": "gpio_toggle",
+      "pin": 2,
+      "label": "Toggle Onboard LED"
+    },
+    {
+      "type": "gpio_high",
+      "pin": 2,
+      "label": "LED ON"
+    },
+    {
+      "type": "gpio_low",
+      "pin": 2,
+      "label": "LED OFF"
+    }
+  ]
+}
