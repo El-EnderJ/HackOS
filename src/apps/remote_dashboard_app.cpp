@@ -713,7 +713,7 @@ private:
         registerRoute("/api/assets",            HTTP_GET,  httpApiAssetsHandler);
         registerRoute("/api/assets/deploy",     HTTP_POST, httpApiAssetsDeployHandler);
 
-        ESP_LOGI(TAG_RD, "HTTP server started with %d endpoints", 18);
+        ESP_LOGI(TAG_RD, "HTTP server started with %d endpoints", 17);
         return true;
     }
 
@@ -2094,6 +2094,8 @@ static constexpr size_t ASSET_COUNT = sizeof(ASSET_CATALOG) / sizeof(ASSET_CATAL
 // Signal Lab API Handlers
 // ═══════════════════════════════════════════════════════════════════════════════
 
+static constexpr size_t ASSET_ID_MAX = 64U;
+
 /// GET /api/assets – list the embedded asset catalog (no content).
 static esp_err_t httpApiAssetsHandler(httpd_req_t *req)
 {
@@ -2149,13 +2151,13 @@ static esp_err_t httpApiAssetsDeployHandler(httpd_req_t *req)
     }
     ++valStart;
     const char *valEnd = strchr(valStart, '"');
-    if (valEnd == nullptr || (valEnd - valStart) >= 64)
+    if (valEnd == nullptr || static_cast<size_t>(valEnd - valStart) >= ASSET_ID_MAX)
     {
         httpd_resp_set_type(req, "application/json");
         return httpd_resp_send(req, "{\"error\":\"bad id\"}", 18);
     }
 
-    char assetId[64];
+    char assetId[ASSET_ID_MAX];
     size_t idLen = static_cast<size_t>(valEnd - valStart);
     memcpy(assetId, valStart, idLen);
     assetId[idLen] = '\0';
