@@ -58,13 +58,10 @@
 #include <new>
 
 #include <esp_log.h>
-#include <esp_bt.h>
-#include <esp_bt_main.h>
-#include <esp_gap_ble_api.h>
-#include <esp_gatts_api.h>
-#include <esp_bt_defs.h>
 #include <esp_system.h>
 #include <freertos/FreeRTOS.h>
+
+#include <NimBLEDevice.h>
 
 #include "apps/hackos_app.h"
 #include "core/event.h"
@@ -234,9 +231,6 @@ static const uint8_t HID_REPORT_MAP[] = {
 /// HID Information characteristic value (USB HID 1.11, country = 0, flags = 0x02 normally connectable).
 static const uint8_t HID_INFO_VALUE[] = {0x11U, 0x01U, 0x00U, 0x02U};
 
-/// HID Control Point initial value.
-static uint8_t s_hidCtrlPt = 0U;
-
 /// PnP ID characteristic: vendor source = Bluetooth SIG (0x02), Apple vendor ID 0x004C.
 static const uint8_t PNP_ID_VALUE[] = {
     0x02U,              // Vendor ID Source (Bluetooth SIG)
@@ -317,12 +311,12 @@ struct DuckyLine
 class BadBtApp;
 static BadBtApp *g_badBtInstance = nullptr;
 
-// GATTS / GAP callbacks
-static void gapEventHandler(esp_gap_ble_cb_event_t event,
-                            esp_ble_gap_cb_param_t *param);
-static void gattsEventHandler(esp_gatts_cb_event_t event,
-                              esp_gatt_if_t gatts_if,
-                              esp_ble_gatts_cb_param_t *param);
+// NimBLE server callbacks
+class BadBtServerCallbacks : public NimBLEServerCallbacks
+{
+    void onConnect(NimBLEServer *pServer) override;
+    void onDisconnect(NimBLEServer *pServer) override;
+};
 
 // ── Character-to-HID-keycode mapping ─────────────────────────────────────────
 
@@ -494,30 +488,11 @@ static uint8_t singleKeyToHid(const char *arg)
     return KEY_NONE;
 }
 
-// ── GATT attribute handles ───────────────────────────────────────────────────
+// ── NimBLE object pointers (set during initBle) ─────────────────────────────
 
-/// Handle indices for the GATT attribute table.
-static constexpr size_t GATT_HANDLE_COUNT = 16U;
-
-static uint16_t s_gattsIf     = ESP_GATT_IF_NONE;
-static uint16_t s_connId      = 0U;
-static bool     s_connected   = false;
-static uint16_t s_handles[GATT_HANDLE_COUNT] = {};
-static uint16_t s_reportCccValue = 0x0000U;
-
-/// Index of the Input Report value handle inside s_handles[].
-static constexpr size_t IDX_REPORT_VAL     = 4U;
-/// Index of the Input Report CCC descriptor handle.
-static constexpr size_t IDX_REPORT_CCC     = 5U;
-
-// ── Advertising parameters ──────────────────────────────────────────────────
-
-static esp_ble_adv_params_t s_advParams = {};
-
-// ── GATT service table definition ────────────────────────────────────────────
-
-/// Number of attributes in our HID + Battery + DeviceInfo GATT table.
-static constexpr size_t HID_ATTR_COUNT = 14U;
+static NimBLEServer            *s_pServer         = nullptr;
+static NimBLECharacteristic    *s_inputReportChar  = nullptr;
+static bool                     s_connected        = false;
 
 // ── App class ────────────────────────────────────────────────────────────────
 
@@ -560,10 +535,9 @@ public:
 
     // ── Connection state (set from GATTS callback) ──────────────────────
 
-    void setConnected(bool connected, uint16_t connId)
+    void setConnected(bool connected, uint16_t /*connId*/)
     {
         s_connected = connected;
-        s_connId    = connId;
     }
 
 protected:
@@ -1130,79 +1104,79 @@ private:
             return;
         }
 
-        // Release classic BT memory – we only use BLE
-        esp_bt_controller_mem_release(ESP_BT_MODE_CLASSIC_BT);
+        NimBLEDevice::init(DEVICE_NAMES[selectedNameIdx_]);
 
-        esp_bt_controller_config_t btCfg = BT_CONTROLLER_INIT_CONFIG_DEFAULT();
-        esp_err_t err = esp_bt_controller_init(&btCfg);
-        if (err != ESP_OK)
-        {
-            ESP_LOGE(TAG_BBT, "BT controller init failed: %d", err);
-            return;
-        }
-        err = esp_bt_controller_enable(ESP_BT_MODE_BLE);
-        if (err != ESP_OK)
-        {
-            ESP_LOGE(TAG_BBT, "BT controller enable failed: %d", err);
-            esp_bt_controller_deinit();
-            return;
-        }
-        err = esp_bluedroid_init();
-        if (err != ESP_OK)
-        {
-            ESP_LOGE(TAG_BBT, "Bluedroid init failed: %d", err);
-            esp_bt_controller_disable();
-            esp_bt_controller_deinit();
-            return;
-        }
-        err = esp_bluedroid_enable();
-        if (err != ESP_OK)
-        {
-            ESP_LOGE(TAG_BBT, "Bluedroid enable failed: %d", err);
-            esp_bluedroid_deinit();
-            esp_bt_controller_disable();
-            esp_bt_controller_deinit();
-            return;
-        }
+        // Security: "Just Works" pairing (no PIN)
+        NimBLEDevice::setSecurityAuth(BLE_SM_PAIR_AUTHREQ_BOND);
+        NimBLEDevice::setSecurityIOCap(BLE_HS_IO_NO_INPUT_OUTPUT);
 
-        // Register GAP and GATTS callbacks
-        esp_ble_gap_register_callback(gapEventHandler);
-        esp_ble_gatts_register_callback(gattsEventHandler);
+        // Create GATT server
+        s_pServer = NimBLEDevice::createServer();
+        static BadBtServerCallbacks serverCb;
+        s_pServer->setCallbacks(&serverCb);
 
-        // Set device name to the selected stealth name
-        esp_ble_gap_set_device_name(DEVICE_NAMES[selectedNameIdx_]);
+        // ── HID Service (0x1812) ────────────────────────────────────────
+        NimBLEService *pHidSvc = s_pServer->createService(
+            NimBLEUUID(HID_SERVICE_UUID));
 
-        // Configure security for pairing
-        esp_ble_auth_req_t authReq = ESP_LE_AUTH_BOND;
-        esp_ble_io_cap_t   ioCap   = ESP_IO_CAP_NONE;
-        uint8_t keySize = 16U;
-        uint8_t initKey = ESP_BLE_ENC_KEY_MASK | ESP_BLE_ID_KEY_MASK;
-        uint8_t rspKey  = ESP_BLE_ENC_KEY_MASK | ESP_BLE_ID_KEY_MASK;
+        // Report Map characteristic (read-only)
+        NimBLECharacteristic *pReportMap = pHidSvc->createCharacteristic(
+            NimBLEUUID(HID_REPORT_MAP_CHAR_UUID),
+            NIMBLE_PROPERTY::READ);
+        pReportMap->setValue(HID_REPORT_MAP, sizeof(HID_REPORT_MAP));
 
-        esp_ble_gap_set_security_param(ESP_BLE_SM_AUTHEN_REQ_MODE,
-                                       &authReq, sizeof(authReq));
-        esp_ble_gap_set_security_param(ESP_BLE_SM_IOCAP_MODE,
-                                       &ioCap, sizeof(ioCap));
-        esp_ble_gap_set_security_param(ESP_BLE_SM_MAX_KEY_SIZE,
-                                       &keySize, sizeof(keySize));
-        esp_ble_gap_set_security_param(ESP_BLE_SM_SET_INIT_KEY,
-                                       &initKey, sizeof(initKey));
-        esp_ble_gap_set_security_param(ESP_BLE_SM_SET_RSP_KEY,
-                                       &rspKey, sizeof(rspKey));
+        // Input Report characteristic (read + notify)
+        s_inputReportChar = pHidSvc->createCharacteristic(
+            NimBLEUUID(HID_REPORT_CHAR_UUID),
+            NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY);
 
-        // Register GATT application – triggers ESP_GATTS_REG_EVT
-        esp_ble_gatts_app_register(0U);
+        // Report Reference descriptor for the Input Report
+        NimBLEDescriptor *pReportRef = s_inputReportChar->createDescriptor(
+            NimBLEUUID(REPORT_REF_DESCRIPTOR_UUID),
+            NIMBLE_PROPERTY::READ);
+        static const uint8_t reportRef[2] = {0x01U, 0x01U};
+        pReportRef->setValue(reportRef, sizeof(reportRef));
 
-        // Configure advertising parameters (connectable)
-        s_advParams.adv_int_min     = 0x20U;
-        s_advParams.adv_int_max     = 0x40U;
-        s_advParams.adv_type        = ADV_TYPE_IND; // Connectable undirected
-        s_advParams.own_addr_type   = BLE_ADDR_TYPE_PUBLIC;
-        s_advParams.channel_map     = ADV_CHNL_ALL;
-        s_advParams.adv_filter_policy = ADV_FILTER_ALLOW_SCAN_ANY_CON_ANY;
+        // HID Information characteristic
+        NimBLECharacteristic *pHidInfo = pHidSvc->createCharacteristic(
+            NimBLEUUID(HID_INFO_CHAR_UUID),
+            NIMBLE_PROPERTY::READ);
+        pHidInfo->setValue(HID_INFO_VALUE, sizeof(HID_INFO_VALUE));
+
+        // HID Control Point characteristic (write-no-response)
+        pHidSvc->createCharacteristic(
+            NimBLEUUID(HID_CTRL_PT_CHAR_UUID),
+            NIMBLE_PROPERTY::WRITE_NR);
+
+        pHidSvc->start();
+
+        // ── Battery Service (0x180F) ────────────────────────────────────
+        NimBLEService *pBatSvc = s_pServer->createService(
+            NimBLEUUID(BATTERY_SERVICE_UUID));
+        NimBLECharacteristic *pBatLvl = pBatSvc->createCharacteristic(
+            NimBLEUUID(BATTERY_LEVEL_CHAR_UUID),
+            NIMBLE_PROPERTY::READ);
+        static uint8_t batLevel = 100U;
+        pBatLvl->setValue(&batLevel, 1U);
+        pBatSvc->start();
+
+        // ── Device Info Service (0x180A) ────────────────────────────────
+        NimBLEService *pDevSvc = s_pServer->createService(
+            NimBLEUUID(DEVINFO_SERVICE_UUID));
+        NimBLECharacteristic *pPnp = pDevSvc->createCharacteristic(
+            NimBLEUUID(PNP_ID_CHAR_UUID),
+            NIMBLE_PROPERTY::READ);
+        pPnp->setValue(PNP_ID_VALUE, sizeof(PNP_ID_VALUE));
+        pDevSvc->start();
+
+        // ── Advertising ─────────────────────────────────────────────────
+        NimBLEAdvertising *pAdv = NimBLEDevice::getAdvertising();
+        pAdv->setAppearance(0x03C1U); // HID Keyboard
+        pAdv->addServiceUUID(NimBLEUUID(HID_SERVICE_UUID));
+        pAdv->start();
 
         bleInitialized_ = true;
-        ESP_LOGI(TAG_BBT, "BLE HID stack initialized");
+        ESP_LOGI(TAG_BBT, "BLE HID stack initialized (NimBLE)");
     }
 
     void deinitBle()
@@ -1212,11 +1186,10 @@ private:
             return;
         }
 
-        esp_ble_gap_stop_advertising();
-        esp_bluedroid_disable();
-        esp_bluedroid_deinit();
-        esp_bt_controller_disable();
-        esp_bt_controller_deinit();
+        NimBLEDevice::getAdvertising()->stop();
+        NimBLEDevice::deinit(true);
+        s_pServer = nullptr;
+        s_inputReportChar = nullptr;
         bleInitialized_ = false;
         s_connected = false;
         ESP_LOGI(TAG_BBT, "BLE HID stack deinitialized");
@@ -1262,19 +1235,13 @@ private:
 
     void startAdvertising()
     {
-        // Build advertising data with HID appearance
-        esp_ble_adv_data_t advData = {};
-        advData.set_scan_rsp      = false;
-        advData.include_name      = true;
-        advData.include_txpower   = false;
-        advData.min_interval      = 0x0006U;
-        advData.max_interval      = 0x0010U;
-        advData.appearance        = 0x03C1U; // HID Keyboard appearance
-        advData.flag              = (ESP_BLE_ADV_FLAG_GEN_DISC |
-                                     ESP_BLE_ADV_FLAG_BREDR_NOT_SPT);
-
-        esp_ble_gap_config_adv_data(&advData);
-        // Advertising starts from the GAP callback after data is set
+        // Advertising was already configured and started in initBle().
+        // If it was stopped (e.g. after disconnect), restart it.
+        NimBLEAdvertising *pAdv = NimBLEDevice::getAdvertising();
+        if (!pAdv->isAdvertising())
+        {
+            pAdv->start();
+        }
     }
 
     // ── Stealth mode ────────────────────────────────────────────────────
@@ -1301,17 +1268,14 @@ private:
     /// Send an 8-byte HID keyboard report: [modifier, reserved, key1..key6]
     void sendKeyReport(uint8_t modifier, uint8_t keycode)
     {
-        if (!s_connected || s_gattsIf == ESP_GATT_IF_NONE)
+        if (!s_connected || s_inputReportChar == nullptr)
         {
             return;
         }
 
         uint8_t report[8] = {modifier, 0x00U, keycode, 0, 0, 0, 0, 0};
-
-        esp_ble_gatts_send_indicate(
-            s_gattsIf, s_connId,
-            s_handles[IDX_REPORT_VAL],
-            sizeof(report), report, false);
+        s_inputReportChar->setValue(report, sizeof(report));
+        s_inputReportChar->notify();
     }
 
     /// Send key-down followed by key-up (release).
@@ -1897,301 +1861,31 @@ private:
         execCharIdx_ = 0U;
     }
 
-    // ── GATTS service creation ──────────────────────────────────────────
+    // ── NimBLE server callback friend access ───────────────────────────
 
-    void createHidService(esp_gatt_if_t gattsIf)
-    {
-        s_gattsIf = gattsIf;
-
-        // Create the attribute table for the HID service
-        // We use manual attr creation for maximum control
-        esp_gatts_attr_db_t attrTab[HID_ATTR_COUNT];
-        std::memset(attrTab, 0, sizeof(attrTab));
-
-        // ── Attribute 0: HID Service declaration ────────────
-        static const uint16_t primaryServiceUuid = ESP_GATT_UUID_PRI_SERVICE;
-        static const uint16_t hidSvcUuid = HID_SERVICE_UUID;
-        attrTab[0].attr_control.auto_rsp = ESP_GATT_AUTO_RSP;
-        attrTab[0].att_desc.uuid_length  = sizeof(uint16_t);
-        attrTab[0].att_desc.uuid_p       = (uint8_t *)&primaryServiceUuid;
-        attrTab[0].att_desc.perm         = ESP_GATT_PERM_READ;
-        attrTab[0].att_desc.max_length   = sizeof(uint16_t);
-        attrTab[0].att_desc.length       = sizeof(uint16_t);
-        attrTab[0].att_desc.value        = (uint8_t *)&hidSvcUuid;
-
-        // ── Attribute 1: HID Report Map char declaration ────
-        static const uint16_t charDeclUuid = ESP_GATT_UUID_CHAR_DECLARE;
-        static const uint8_t charPropRead = ESP_GATT_CHAR_PROP_BIT_READ;
-        attrTab[1].attr_control.auto_rsp = ESP_GATT_AUTO_RSP;
-        attrTab[1].att_desc.uuid_length  = sizeof(uint16_t);
-        attrTab[1].att_desc.uuid_p       = (uint8_t *)&charDeclUuid;
-        attrTab[1].att_desc.perm         = ESP_GATT_PERM_READ;
-        attrTab[1].att_desc.max_length   = sizeof(uint8_t);
-        attrTab[1].att_desc.length       = sizeof(uint8_t);
-        attrTab[1].att_desc.value        = (uint8_t *)&charPropRead;
-
-        // ── Attribute 2: HID Report Map char value ──────────
-        static const uint16_t reportMapUuid = HID_REPORT_MAP_CHAR_UUID;
-        attrTab[2].attr_control.auto_rsp = ESP_GATT_AUTO_RSP;
-        attrTab[2].att_desc.uuid_length  = sizeof(uint16_t);
-        attrTab[2].att_desc.uuid_p       = (uint8_t *)&reportMapUuid;
-        attrTab[2].att_desc.perm         = ESP_GATT_PERM_READ;
-        attrTab[2].att_desc.max_length   = sizeof(HID_REPORT_MAP);
-        attrTab[2].att_desc.length       = sizeof(HID_REPORT_MAP);
-        attrTab[2].att_desc.value        = (uint8_t *)HID_REPORT_MAP;
-
-        // ── Attribute 3: HID Input Report char declaration ──
-        static const uint8_t charPropReadNotify = ESP_GATT_CHAR_PROP_BIT_READ |
-                                                   ESP_GATT_CHAR_PROP_BIT_NOTIFY;
-        attrTab[3].attr_control.auto_rsp = ESP_GATT_AUTO_RSP;
-        attrTab[3].att_desc.uuid_length  = sizeof(uint16_t);
-        attrTab[3].att_desc.uuid_p       = (uint8_t *)&charDeclUuid;
-        attrTab[3].att_desc.perm         = ESP_GATT_PERM_READ;
-        attrTab[3].att_desc.max_length   = sizeof(uint8_t);
-        attrTab[3].att_desc.length       = sizeof(uint8_t);
-        attrTab[3].att_desc.value        = (uint8_t *)&charPropReadNotify;
-
-        // ── Attribute 4: HID Input Report value ─────────────
-        static const uint16_t reportCharUuid = HID_REPORT_CHAR_UUID;
-        static uint8_t reportValue[8] = {};
-        attrTab[4].attr_control.auto_rsp = ESP_GATT_AUTO_RSP;
-        attrTab[4].att_desc.uuid_length  = sizeof(uint16_t);
-        attrTab[4].att_desc.uuid_p       = (uint8_t *)&reportCharUuid;
-        attrTab[4].att_desc.perm         = ESP_GATT_PERM_READ;
-        attrTab[4].att_desc.max_length   = sizeof(reportValue);
-        attrTab[4].att_desc.length       = sizeof(reportValue);
-        attrTab[4].att_desc.value        = reportValue;
-
-        // ── Attribute 5: CCC descriptor for Input Report ────
-        static const uint16_t cccUuid = CCC_DESCRIPTOR_UUID;
-        attrTab[5].attr_control.auto_rsp = ESP_GATT_AUTO_RSP;
-        attrTab[5].att_desc.uuid_length  = sizeof(uint16_t);
-        attrTab[5].att_desc.uuid_p       = (uint8_t *)&cccUuid;
-        attrTab[5].att_desc.perm         = ESP_GATT_PERM_READ | ESP_GATT_PERM_WRITE;
-        attrTab[5].att_desc.max_length   = sizeof(uint16_t);
-        attrTab[5].att_desc.length       = sizeof(uint16_t);
-        attrTab[5].att_desc.value        = (uint8_t *)&s_reportCccValue;
-
-        // ── Attribute 6: Report Reference descriptor ────────
-        static const uint16_t reportRefUuid = REPORT_REF_DESCRIPTOR_UUID;
-        static const uint8_t reportRef[2] = {0x01U, 0x01U}; // Report ID 1, Input
-        attrTab[6].attr_control.auto_rsp = ESP_GATT_AUTO_RSP;
-        attrTab[6].att_desc.uuid_length  = sizeof(uint16_t);
-        attrTab[6].att_desc.uuid_p       = (uint8_t *)&reportRefUuid;
-        attrTab[6].att_desc.perm         = ESP_GATT_PERM_READ;
-        attrTab[6].att_desc.max_length   = sizeof(reportRef);
-        attrTab[6].att_desc.length       = sizeof(reportRef);
-        attrTab[6].att_desc.value        = (uint8_t *)reportRef;
-
-        // ── Attribute 7: HID Info char declaration ──────────
-        attrTab[7].attr_control.auto_rsp = ESP_GATT_AUTO_RSP;
-        attrTab[7].att_desc.uuid_length  = sizeof(uint16_t);
-        attrTab[7].att_desc.uuid_p       = (uint8_t *)&charDeclUuid;
-        attrTab[7].att_desc.perm         = ESP_GATT_PERM_READ;
-        attrTab[7].att_desc.max_length   = sizeof(uint8_t);
-        attrTab[7].att_desc.length       = sizeof(uint8_t);
-        attrTab[7].att_desc.value        = (uint8_t *)&charPropRead;
-
-        // ── Attribute 8: HID Info char value ────────────────
-        static const uint16_t hidInfoUuid = HID_INFO_CHAR_UUID;
-        attrTab[8].attr_control.auto_rsp = ESP_GATT_AUTO_RSP;
-        attrTab[8].att_desc.uuid_length  = sizeof(uint16_t);
-        attrTab[8].att_desc.uuid_p       = (uint8_t *)&hidInfoUuid;
-        attrTab[8].att_desc.perm         = ESP_GATT_PERM_READ;
-        attrTab[8].att_desc.max_length   = sizeof(HID_INFO_VALUE);
-        attrTab[8].att_desc.length       = sizeof(HID_INFO_VALUE);
-        attrTab[8].att_desc.value        = (uint8_t *)HID_INFO_VALUE;
-
-        // ── Attribute 9: HID Control Point char declaration ─
-        static const uint8_t charPropWriteNR = ESP_GATT_CHAR_PROP_BIT_WRITE_NR;
-        attrTab[9].attr_control.auto_rsp = ESP_GATT_AUTO_RSP;
-        attrTab[9].att_desc.uuid_length  = sizeof(uint16_t);
-        attrTab[9].att_desc.uuid_p       = (uint8_t *)&charDeclUuid;
-        attrTab[9].att_desc.perm         = ESP_GATT_PERM_READ;
-        attrTab[9].att_desc.max_length   = sizeof(uint8_t);
-        attrTab[9].att_desc.length       = sizeof(uint8_t);
-        attrTab[9].att_desc.value        = (uint8_t *)&charPropWriteNR;
-
-        // ── Attribute 10: HID Control Point char value ──────
-        static const uint16_t ctrlPtUuid = HID_CTRL_PT_CHAR_UUID;
-        attrTab[10].attr_control.auto_rsp = ESP_GATT_AUTO_RSP;
-        attrTab[10].att_desc.uuid_length  = sizeof(uint16_t);
-        attrTab[10].att_desc.uuid_p       = (uint8_t *)&ctrlPtUuid;
-        attrTab[10].att_desc.perm         = ESP_GATT_PERM_WRITE;
-        attrTab[10].att_desc.max_length   = sizeof(s_hidCtrlPt);
-        attrTab[10].att_desc.length       = sizeof(s_hidCtrlPt);
-        attrTab[10].att_desc.value        = &s_hidCtrlPt;
-
-        // ── Attribute 11: Battery Service declaration ───────
-        static const uint16_t batSvcUuid = BATTERY_SERVICE_UUID;
-        attrTab[11].attr_control.auto_rsp = ESP_GATT_AUTO_RSP;
-        attrTab[11].att_desc.uuid_length  = sizeof(uint16_t);
-        attrTab[11].att_desc.uuid_p       = (uint8_t *)&primaryServiceUuid;
-        attrTab[11].att_desc.perm         = ESP_GATT_PERM_READ;
-        attrTab[11].att_desc.max_length   = sizeof(uint16_t);
-        attrTab[11].att_desc.length       = sizeof(uint16_t);
-        attrTab[11].att_desc.value        = (uint8_t *)&batSvcUuid;
-
-        // ── Attribute 12: Battery Level char declaration ────
-        attrTab[12].attr_control.auto_rsp = ESP_GATT_AUTO_RSP;
-        attrTab[12].att_desc.uuid_length  = sizeof(uint16_t);
-        attrTab[12].att_desc.uuid_p       = (uint8_t *)&charDeclUuid;
-        attrTab[12].att_desc.perm         = ESP_GATT_PERM_READ;
-        attrTab[12].att_desc.max_length   = sizeof(uint8_t);
-        attrTab[12].att_desc.length       = sizeof(uint8_t);
-        attrTab[12].att_desc.value        = (uint8_t *)&charPropRead;
-
-        // ── Attribute 13: Battery Level char value ──────────
-        static const uint16_t batLvlUuid = BATTERY_LEVEL_CHAR_UUID;
-        static uint8_t batLevel = 100U;
-        attrTab[13].attr_control.auto_rsp = ESP_GATT_AUTO_RSP;
-        attrTab[13].att_desc.uuid_length  = sizeof(uint16_t);
-        attrTab[13].att_desc.uuid_p       = (uint8_t *)&batLvlUuid;
-        attrTab[13].att_desc.perm         = ESP_GATT_PERM_READ;
-        attrTab[13].att_desc.max_length   = sizeof(batLevel);
-        attrTab[13].att_desc.length       = sizeof(batLevel);
-        attrTab[13].att_desc.value        = &batLevel;
-
-        esp_ble_gatts_create_attr_tab(attrTab, gattsIf, HID_ATTR_COUNT, 0U);
-    }
-
-    // ── GATTS / GAP callback friend access ──────────────────────────────
-
-    friend void gapEventHandler(esp_gap_ble_cb_event_t event,
-                                esp_ble_gap_cb_param_t *param);
-    friend void gattsEventHandler(esp_gatts_cb_event_t event,
-                                  esp_gatt_if_t gatts_if,
-                                  esp_ble_gatts_cb_param_t *param);
+    friend class BadBtServerCallbacks;
 };
 
-// ── GAP event handler (static, runs in BT task context) ──────────────────────
+// ── NimBLE server callbacks (runs in NimBLE host task context) ────────────────
 
-static void gapEventHandler(esp_gap_ble_cb_event_t event,
-                            esp_ble_gap_cb_param_t *param)
+void BadBtServerCallbacks::onConnect(NimBLEServer * /*pServer*/)
 {
-    switch (event)
+    if (g_badBtInstance != nullptr)
     {
-    case ESP_GAP_BLE_ADV_DATA_SET_COMPLETE_EVT:
-        esp_ble_gap_start_advertising(&s_advParams);
-        ESP_LOGD(TAG_BBT, "ADV data set – advertising started");
-        break;
-
-    case ESP_GAP_BLE_ADV_START_COMPLETE_EVT:
-        if (param->adv_start_cmpl.status == ESP_BT_STATUS_SUCCESS)
-        {
-            ESP_LOGI(TAG_BBT, "Advertising started OK");
-        }
-        else
-        {
-            ESP_LOGW(TAG_BBT, "Advertising start failed: %d",
-                     param->adv_start_cmpl.status);
-        }
-        break;
-
-    case ESP_GAP_BLE_SEC_REQ_EVT:
-        // Accept pairing request
-        esp_ble_gap_security_rsp(param->ble_security.ble_req.bd_addr, true);
-        ESP_LOGI(TAG_BBT, "Security request – accepted");
-        break;
-
-    case ESP_GAP_BLE_AUTH_CMPL_EVT:
-        if (param->ble_security.auth_cmpl.success)
-        {
-            ESP_LOGI(TAG_BBT, "Authentication complete (bonded)");
-        }
-        else
-        {
-            ESP_LOGW(TAG_BBT, "Authentication failed: %d",
-                     param->ble_security.auth_cmpl.fail_reason);
-        }
-        break;
-
-    default:
-        break;
+        g_badBtInstance->setConnected(true, 0U);
     }
+    ESP_LOGI(TAG_BBT, "Client connected");
 }
 
-// ── GATTS event handler (static, runs in BT task context) ────────────────────
-
-static void gattsEventHandler(esp_gatts_cb_event_t event,
-                              esp_gatt_if_t gatts_if,
-                              esp_ble_gatts_cb_param_t *param)
+void BadBtServerCallbacks::onDisconnect(NimBLEServer * /*pServer*/)
 {
-    switch (event)
+    if (g_badBtInstance != nullptr)
     {
-    case ESP_GATTS_REG_EVT:
-        if (param->reg.status == ESP_GATT_OK)
-        {
-            s_gattsIf = gatts_if;
-            if (g_badBtInstance != nullptr)
-            {
-                g_badBtInstance->createHidService(gatts_if);
-            }
-            ESP_LOGI(TAG_BBT, "GATTS registered, creating HID service");
-        }
-        break;
-
-    case ESP_GATTS_CREAT_ATTR_TAB_EVT:
-        if (param->add_attr_tab.status == ESP_GATT_OK &&
-            param->add_attr_tab.num_handle == HID_ATTR_COUNT)
-        {
-            std::memcpy(s_handles, param->add_attr_tab.handles,
-                        sizeof(uint16_t) * HID_ATTR_COUNT);
-            esp_ble_gatts_start_service(s_handles[0]);
-            ESP_LOGI(TAG_BBT, "Attribute table created (%u handles)",
-                     static_cast<unsigned>(HID_ATTR_COUNT));
-        }
-        else
-        {
-            ESP_LOGE(TAG_BBT, "Attr table creation failed: status=%d, handles=%d",
-                     param->add_attr_tab.status,
-                     param->add_attr_tab.num_handle);
-        }
-        break;
-
-    case ESP_GATTS_START_EVT:
-        ESP_LOGI(TAG_BBT, "GATT service started");
-        break;
-
-    case ESP_GATTS_CONNECT_EVT:
-        if (g_badBtInstance != nullptr)
-        {
-            g_badBtInstance->setConnected(true, param->connect.conn_id);
-        }
-        // Request encryption without MITM (matches ESP_IO_CAP_NONE "Just Works")
-        esp_ble_set_encryption(param->connect.remote_bda,
-                               ESP_BLE_SEC_ENCRYPT_NO_MITM);
-        ESP_LOGI(TAG_BBT, "Client connected (conn_id=%u)",
-                 static_cast<unsigned>(param->connect.conn_id));
-        break;
-
-    case ESP_GATTS_DISCONNECT_EVT:
-        if (g_badBtInstance != nullptr)
-        {
-            g_badBtInstance->setConnected(false, 0U);
-        }
-        // Re-start advertising for reconnection
-        esp_ble_gap_start_advertising(&s_advParams);
-        ESP_LOGI(TAG_BBT, "Client disconnected – re-advertising");
-        break;
-
-    case ESP_GATTS_WRITE_EVT:
-        // Handle CCC writes (enable/disable notifications)
-        if (param->write.handle == s_handles[IDX_REPORT_CCC])
-        {
-            if (param->write.len == 2U)
-            {
-                s_reportCccValue = static_cast<uint16_t>(
-                    param->write.value[0] | (param->write.value[1] << 8U));
-                ESP_LOGD(TAG_BBT, "Report CCC written: 0x%04X",
-                         s_reportCccValue);
-            }
-        }
-        break;
-
-    default:
-        break;
+        g_badBtInstance->setConnected(false, 0U);
     }
+    // Re-start advertising for reconnection
+    NimBLEDevice::getAdvertising()->start();
+    ESP_LOGI(TAG_BBT, "Client disconnected – re-advertising");
 }
 
 } // namespace

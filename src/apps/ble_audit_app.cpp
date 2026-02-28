@@ -30,11 +30,10 @@
 #include <new>
 
 #include <esp_log.h>
-#include <esp_bt.h>
-#include <esp_bt_main.h>
-#include <esp_gap_ble_api.h>
 #include <esp_system.h>
 #include <freertos/FreeRTOS.h>
+
+#include <NimBLEDevice.h>
 
 #include "apps/hackos_app.h"
 #include "core/event.h"
@@ -190,31 +189,19 @@ static const char *const MAIN_MENU_LABELS[MAIN_MENU_COUNT] = {
     "Back",
 };
 
-// ── Advertising parameters (non-connectable undirected) ──────────────────────
-
-static esp_ble_adv_params_t s_advParams = {};
-
 // ── Forward declarations ─────────────────────────────────────────────────────
 
 class BleAuditApp;
 static BleAuditApp *g_bleAppInstance = nullptr;
 
-// ── GAP event callback ───────────────────────────────────────────────────────
+// ── NimBLE scan callback ─────────────────────────────────────────────────────
 
-static void gapEventHandler(esp_gap_ble_cb_event_t event,
-                            esp_ble_gap_cb_param_t *param);
+class BleAuditScanCallbacks : public NimBLEAdvertisedDeviceCallbacks
+{
+    void onResult(NimBLEAdvertisedDevice *advertisedDevice) override;
+};
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
-
-/// Generate a random BLE static address (two MSBs set to 0b11).
-static void generateRandomAddr(uint8_t addr[6])
-{
-    for (int i = 0; i < 6; ++i)
-    {
-        addr[i] = static_cast<uint8_t>(esp_random() & 0xFFU);
-    }
-    addr[5] |= 0xC0U; // static random address type
-}
 
 /// Check if a device name matches any suspicious prefix.
 static bool isSuspiciousDevice(const char *name)
@@ -257,14 +244,6 @@ public:
         std::memset(devices_, 0, sizeof(devices_));
         std::memset(scanLabels_, 0, sizeof(scanLabels_));
         std::memset(scanPtrs_, 0, sizeof(scanPtrs_));
-
-        // Configure non-connectable undirected advertising
-        s_advParams.adv_int_min     = 0x20;   // 20 ms minimum interval
-        s_advParams.adv_int_max     = 0x40;   // 40 ms maximum interval
-        s_advParams.adv_type        = ADV_TYPE_NONCONN_IND;
-        s_advParams.own_addr_type   = BLE_ADDR_TYPE_RANDOM;
-        s_advParams.channel_map     = ADV_CHNL_ALL;
-        s_advParams.adv_filter_policy = ADV_FILTER_ALLOW_SCAN_ANY_CON_ANY;
     }
 
     // ── Scan result insertion (called from GAP callback) ─────────────────
@@ -606,44 +585,9 @@ private:
             return;
         }
 
-        // Release classic BT memory – we only use BLE
-        esp_bt_controller_mem_release(ESP_BT_MODE_CLASSIC_BT);
-
-        esp_bt_controller_config_t btCfg = BT_CONTROLLER_INIT_CONFIG_DEFAULT();
-        esp_err_t err = esp_bt_controller_init(&btCfg);
-        if (err != ESP_OK)
-        {
-            ESP_LOGE(TAG_BLE, "BT controller init failed: %d", err);
-            return;
-        }
-        err = esp_bt_controller_enable(ESP_BT_MODE_BLE);
-        if (err != ESP_OK)
-        {
-            ESP_LOGE(TAG_BLE, "BT controller enable failed: %d", err);
-            esp_bt_controller_deinit();
-            return;
-        }
-        err = esp_bluedroid_init();
-        if (err != ESP_OK)
-        {
-            ESP_LOGE(TAG_BLE, "Bluedroid init failed: %d", err);
-            esp_bt_controller_disable();
-            esp_bt_controller_deinit();
-            return;
-        }
-        err = esp_bluedroid_enable();
-        if (err != ESP_OK)
-        {
-            ESP_LOGE(TAG_BLE, "Bluedroid enable failed: %d", err);
-            esp_bluedroid_deinit();
-            esp_bt_controller_disable();
-            esp_bt_controller_deinit();
-            return;
-        }
-
-        esp_ble_gap_register_callback(gapEventHandler);
+        NimBLEDevice::init("HackOS-BLE");
         bleInitialized_ = true;
-        ESP_LOGI(TAG_BLE, "BLE stack initialized (bluedroid)");
+        ESP_LOGI(TAG_BLE, "BLE stack initialized (NimBLE)");
     }
 
     void deinitBle()
@@ -653,10 +597,7 @@ private:
             return;
         }
 
-        esp_bluedroid_disable();
-        esp_bluedroid_deinit();
-        esp_bt_controller_disable();
-        esp_bt_controller_deinit();
+        NimBLEDevice::deinit(true);
         bleInitialized_ = false;
         ESP_LOGI(TAG_BLE, "BLE stack deinitialized");
     }
@@ -692,7 +633,7 @@ private:
             return;
         }
 
-        esp_ble_gap_stop_advertising();
+        NimBLEDevice::getAdvertising()->stop();
         spamActive_ = false;
         ESP_LOGI(TAG_BLE, "BLE spam stopped (packets=%lu)",
                  static_cast<unsigned long>(spamCount_));
@@ -701,21 +642,24 @@ private:
     /// Rotate the random MAC, set raw ADV data, and restart advertising.
     void rotateAndAdvertise()
     {
-        esp_ble_gap_stop_advertising();
+        NimBLEDevice::getAdvertising()->stop();
 
-        // Set a fresh random address
-        uint8_t addr[6];
-        generateRandomAddr(addr);
-        esp_ble_gap_set_rand_addr(addr);
+        // Set address type to random (NRPA) for MAC rotation
+        NimBLEDevice::setOwnAddrType(BLE_OWN_ADDR_RANDOM, true);
 
-        // Load the selected payload
+        // Build advertisement data from the selected payload
         const size_t idx = static_cast<size_t>(selectedPayload_);
-        // ESP-IDF API takes non-const pointer but does not modify the data
-        esp_ble_gap_config_adv_data_raw(
-            const_cast<uint8_t *>(PAYLOADS[idx].data),
-            static_cast<uint32_t>(PAYLOADS[idx].length));
+        NimBLEAdvertisementData advData;
+        advData.addData(const_cast<char *>(reinterpret_cast<const char *>(PAYLOADS[idx].data)),
+                        PAYLOADS[idx].length);
 
-        // Advertising is started from the GAP callback after data is set
+        NimBLEAdvertising *pAdv = NimBLEDevice::getAdvertising();
+        pAdv->setAdvertisementData(advData);
+        pAdv->setAdvertisementType(BLE_HCI_ADV_TYPE_ADV_NONCONN_IND);
+        pAdv->start();
+
+        ++spamCount_;
+
         lastMacRotateMs_ = static_cast<uint32_t>(
             xTaskGetTickCount() * portTICK_PERIOD_MS);
     }
@@ -755,17 +699,15 @@ private:
         std::memset(devices_, 0, sizeof(devices_));
         freeScanLabels();
 
-        // Configure passive scan parameters
-        esp_ble_scan_params_t scanParams = {};
-        scanParams.scan_type          = BLE_SCAN_TYPE_PASSIVE;
-        scanParams.own_addr_type      = BLE_ADDR_TYPE_PUBLIC;
-        scanParams.scan_filter_policy = BLE_SCAN_FILTER_ALLOW_ALL;
-        scanParams.scan_interval      = 0x50;  // 50 ms
-        scanParams.scan_window        = 0x30;  // 30 ms
-        scanParams.scan_duplicate     = BLE_SCAN_DUPLICATE_DISABLE;
-
-        esp_ble_gap_set_scan_params(&scanParams);
-        // Scanning starts from the GAP callback after params are set.
+        // Configure passive scan via NimBLE
+        NimBLEScan *pScan = NimBLEDevice::getScan();
+        static BleAuditScanCallbacks scanCb;
+        pScan->setAdvertisedDeviceCallbacks(&scanCb, true);
+        pScan->setActiveScan(false);           // passive
+        pScan->setInterval(0x50);              // 50 ms
+        pScan->setWindow(0x30);                // 30 ms
+        pScan->setDuplicateFilter(false);
+        pScan->start(0, nullptr, false);       // indefinite, non-blocking
 
         scanActive_ = true;
         transitionTo(BleState::SCANNER_RUNNING);
@@ -779,7 +721,7 @@ private:
             return;
         }
 
-        esp_ble_gap_stop_scanning();
+        NimBLEDevice::getScan()->stop();
         scanActive_ = false;
         ESP_LOGI(TAG_BLE, "BLE scan stopped (devices=%u)",
                  static_cast<unsigned>(deviceCount_));
@@ -834,68 +776,30 @@ private:
         }
     }
 
-    // ── GAP callback friend access ───────────────────────────────────────
+    // ── NimBLE scan callback friend access ──────────────────────────────
 
-    friend void gapEventHandler(esp_gap_ble_cb_event_t event,
-                                esp_ble_gap_cb_param_t *param);
+    friend class BleAuditScanCallbacks;
 };
 
-// ── GAP event handler (static, runs in BT task context) ──────────────────────
+// ── NimBLE scan callback (runs in NimBLE host task context) ──────────────────
 
-static void gapEventHandler(esp_gap_ble_cb_event_t event,
-                            esp_ble_gap_cb_param_t *param)
+void BleAuditScanCallbacks::onResult(NimBLEAdvertisedDevice *advertisedDevice)
 {
-    switch (event)
+    if (g_bleAppInstance == nullptr || advertisedDevice == nullptr)
     {
-    case ESP_GAP_BLE_ADV_DATA_RAW_SET_COMPLETE_EVT:
-        // Raw ADV data configured – start advertising
-        if (g_bleAppInstance != nullptr && g_bleAppInstance->spamActive_)
-        {
-            esp_ble_gap_start_advertising(&s_advParams);
-        }
-        break;
-
-    case ESP_GAP_BLE_ADV_START_COMPLETE_EVT:
-        if (param->adv_start_cmpl.status == ESP_BT_STATUS_SUCCESS)
-        {
-            if (g_bleAppInstance != nullptr)
-            {
-                ++g_bleAppInstance->spamCount_;
-            }
-            ESP_LOGD(TAG_BLE, "ADV started OK");
-        }
-        else
-        {
-            ESP_LOGW(TAG_BLE, "ADV start failed: %d",
-                     param->adv_start_cmpl.status);
-        }
-        break;
-
-    case ESP_GAP_BLE_SCAN_PARAM_SET_COMPLETE_EVT:
-        // Scan parameters set – begin scanning (0 = indefinite)
-        if (param->scan_param_cmpl.status == ESP_BT_STATUS_SUCCESS)
-        {
-            esp_ble_gap_start_scanning(0U);
-        }
-        break;
-
-    case ESP_GAP_BLE_SCAN_RESULT_EVT:
-        if (param->scan_rst.search_evt == ESP_GAP_SEARCH_INQ_RES_EVT)
-        {
-            if (g_bleAppInstance != nullptr)
-            {
-                g_bleAppInstance->addScanResult(
-                    param->scan_rst.bda,
-                    param->scan_rst.rssi,
-                    param->scan_rst.ble_adv,
-                    static_cast<size_t>(param->scan_rst.adv_data_len));
-            }
-        }
-        break;
-
-    default:
-        break;
+        return;
     }
+
+    const NimBLEAddress &addr = advertisedDevice->getAddress();
+    const uint8_t *nativeAddr = addr.getNative();
+    int rssi = advertisedDevice->getRSSI();
+
+    // Extract raw ADV payload for name parsing
+    const uint8_t *payload = advertisedDevice->getPayload();
+    size_t payloadLen = advertisedDevice->getPayloadLength();
+
+    g_bleAppInstance->addScanResult(
+        nativeAddr, rssi, payload, payloadLen);
 }
 
 } // namespace
