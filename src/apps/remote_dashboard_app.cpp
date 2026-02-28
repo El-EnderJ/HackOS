@@ -39,6 +39,7 @@
 #include "hardware/input.h"
 #include "storage/vfs.h"
 #include "ui/widgets.h"
+#include "net/websocket_server.h"
 
 static constexpr const char *TAG_RD = "RemoteDash";
 
@@ -49,7 +50,7 @@ namespace
 
 static constexpr uint8_t AP_CHANNEL      = 1U;
 static constexpr uint8_t AP_MAX_CONN     = 4U;
-static constexpr size_t HTTPD_MAX_URI    = 20U;
+static constexpr size_t HTTPD_MAX_URI    = 24U;
 static constexpr size_t HTTPD_STACK_SIZE = 8192U;
 static constexpr size_t FILE_BUF_SIZE    = 2048U;
 static constexpr size_t JSON_BUF_SIZE    = 2048U;
@@ -142,6 +143,10 @@ input[type=text]{background:#111;color:#00ff41;border:1px solid #333;padding:6px
 <button onclick="showPanel('rf')">RF Monitor</button>
 <button onclick="showPanel('plugins')">Plugin Store</button>
 <button onclick="showPanel('siglab')">Signal Lab</button>
+<button onclick="showPanel('sigrec')">Signal Rec</button>
+<button onclick="showPanel('pcap')">PCAP Live</button>
+<button onclick="showPanel('nfcedit')">NFC Editor</button>
+<button onclick="showPanel('term')">Terminal</button>
 </div>
 
 <div id="status" class="panel active">
@@ -220,6 +225,77 @@ input[type=text]{background:#111;color:#00ff41;border:1px solid #333;padding:6px
 </div>
 </div>
 
+<div id="sigrec" class="panel">
+<div class="card"><h3>&#128225; Live Signal Reconstructor</h3>
+<p style="color:#888;font-size:12px;margin-bottom:8px">Real-time 433 MHz RAW pulse waveform via WebSocket. Use mouse wheel to zoom, click to measure pulse width.</p>
+<canvas id="sig-canvas" style="width:100%;height:260px;background:#0a0a0a;border:1px solid #333;border-radius:4px;cursor:crosshair"></canvas>
+<div style="display:flex;gap:12px;margin-top:8px;font-size:12px">
+<span>Zoom: <span id="sig-zoom">1x</span></span>
+<span>Offset: <span id="sig-offset">0</span></span>
+<span>Cursor: <span id="sig-cursor">-</span></span>
+<span>Pulse: <span id="sig-pulse">-</span></span>
+<button class="btn" onclick="sigRecReset()">Reset View</button>
+<button class="btn" onclick="sigRecPause()">Pause</button>
+</div>
+<div class="log" id="sig-log">Connecting to WebSocket...</div>
+</div>
+</div>
+
+<div id="pcap" class="panel">
+<div class="card"><h3>&#128225; Live PCAP Dashboard</h3>
+<p style="color:#888;font-size:12px;margin-bottom:8px">Real-time WiFi traffic metadata. Radar view + sortable table.</p>
+<div style="display:flex;gap:12px;flex-wrap:wrap">
+<div style="flex:1;min-width:240px">
+<canvas id="pcap-radar" style="width:100%;height:240px;background:#0a0a0a;border:1px solid #333;border-radius:4px"></canvas>
+</div>
+<div style="flex:2;min-width:300px;max-height:300px;overflow-y:auto">
+<table style="width:100%;font-size:12px;border-collapse:collapse" id="pcap-table">
+<thead><tr style="border-bottom:1px solid #333;color:#0a0">
+<th style="padding:4px;cursor:pointer" onclick="pcapSort('ssid')">SSID</th>
+<th style="padding:4px;cursor:pointer" onclick="pcapSort('rssi')">RSSI</th>
+<th style="padding:4px;cursor:pointer" onclick="pcapSort('ch')">Ch</th>
+<th style="padding:4px;cursor:pointer" onclick="pcapSort('enc')">Enc</th>
+</tr></thead>
+<tbody id="pcap-body"></tbody>
+</table>
+</div>
+</div>
+<div class="log" id="pcap-log">Waiting for PCAP data...</div>
+</div>
+</div>
+
+<div id="nfcedit" class="panel">
+<div class="card"><h3>&#128179; NFC Hex Editor</h3>
+<p style="color:#888;font-size:12px;margin-bottom:8px">Read Mifare dumps from SD, edit sectors/keys, save back for emulation.</p>
+<div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+<input type="text" id="nfc-path" placeholder="/ext/nfc/dump.bin" style="flex:1;min-width:200px">
+<button class="btn" onclick="nfcLoad()">Load from SD</button>
+<button class="btn" onclick="nfcSave()">Save to SD</button>
+</div>
+<div id="nfc-sectors" style="font-family:'Courier New',monospace;font-size:11px;max-height:400px;overflow-y:auto"></div>
+<div class="log" id="nfc-log"></div>
+</div>
+</div>
+
+<div id="term" class="panel">
+<div class="card"><h3>&#128187; Remote Terminal</h3>
+<p style="color:#888;font-size:12px;margin-bottom:8px">Web-to-Serial bridge. Send commands to AppManager as if pressing physical buttons.</p>
+<div id="term-output" style="background:#0a0a0a;color:#00ff41;font-family:'Courier New',monospace;font-size:12px;height:300px;overflow-y:auto;padding:8px;border:1px solid #333;border-radius:4px;white-space:pre-wrap"></div>
+<div style="display:flex;gap:8px;margin-top:8px">
+<input type="text" id="term-input" placeholder="Type command..." style="flex:1" onkeydown="if(event.key==='Enter')termSend()">
+<button class="btn" onclick="termSend()">Send</button>
+</div>
+<div style="display:flex;gap:4px;margin-top:8px;flex-wrap:wrap">
+<button class="btn" onclick="termBtn('up')">&#9650; UP</button>
+<button class="btn" onclick="termBtn('down')">&#9660; DOWN</button>
+<button class="btn" onclick="termBtn('left')">&#9664; LEFT</button>
+<button class="btn" onclick="termBtn('right')">&#9654; RIGHT</button>
+<button class="btn" onclick="termBtn('press')">&#9679; PRESS</button>
+<button class="btn" onclick="termBtn('back')">&#8592; BACK</button>
+</div>
+</div>
+</div>
+
 <script>
 let curPath='/ext';
 function api(u,o){return fetch(u,o).then(r=>r.json()).catch(e=>({error:e.message}))}
@@ -234,6 +310,9 @@ if(id==='files')loadFiles();
 if(id==='rf')startRF();
 if(id==='plugins')loadPlugins();
 if(id==='siglab')loadAssets();
+if(id==='sigrec')initSigRec();
+if(id==='pcap')initPcap();
+if(id==='term')initTerm();
 }
 function loadStatus(){
 api('/api/status').then(d=>{
@@ -427,6 +506,154 @@ if(done+fail===list.length)lg.textContent='Deployed: '+done+' OK, '+fail+' faile
 });
 });
 }
+/* ── Live Signal Reconstructor ─────────────────────────────────────────── */
+let sigWs=null,sigData=[],sigZoom=1,sigOffX=0,sigPaused=false,sigMark=-1;
+function initSigRec(){
+if(sigWs&&sigWs.readyState<=1)return;
+let lg=document.getElementById('sig-log');
+let c=document.getElementById('sig-canvas');
+c.width=c.clientWidth;c.height=c.clientHeight;
+let ctx=c.getContext('2d');
+sigWs=new WebSocket('ws://'+location.host+'/ws');
+sigWs.onopen=function(){lg.textContent='WebSocket connected';};
+sigWs.onmessage=function(e){
+if(sigPaused)return;
+try{let m=JSON.parse(e.data);if(m.type==='rf_pulse'&&m.pulses){m.pulses.forEach(function(p){sigData.push(p);});if(sigData.length>8000)sigData=sigData.slice(-8000);drawSig(ctx,c);}}catch(err){}
+};
+sigWs.onerror=function(){lg.textContent='WS error';};
+sigWs.onclose=function(){lg.textContent='WS closed';};
+c.onwheel=function(e){e.preventDefault();sigZoom=Math.max(0.1,Math.min(50,sigZoom*(e.deltaY<0?1.2:0.83)));document.getElementById('sig-zoom').textContent=sigZoom.toFixed(1)+'x';drawSig(ctx,c);};
+c.onmousemove=function(e){let r=c.getBoundingClientRect();let x=Math.floor((e.clientX-r.left)/r.width*c.width);document.getElementById('sig-cursor').textContent=x+'px';if(sigMark>=0){let pw=Math.abs(x-sigMark);document.getElementById('sig-pulse').textContent=pw+'px / ~'+(pw/sigZoom).toFixed(0)+'us';}};
+c.onclick=function(e){let r=c.getBoundingClientRect();sigMark=Math.floor((e.clientX-r.left)/r.width*c.width);};
+}
+function drawSig(ctx,c){
+ctx.fillStyle='#0a0a0a';ctx.fillRect(0,0,c.width,c.height);
+if(!sigData.length)return;
+let mid=c.height/2;
+ctx.strokeStyle='#333';ctx.beginPath();ctx.moveTo(0,mid);ctx.lineTo(c.width,mid);ctx.stroke();
+ctx.strokeStyle='#00ff41';ctx.lineWidth=1;ctx.beginPath();
+let x=0,high=false;
+let start=Math.max(0,sigData.length-Math.floor(c.width/sigZoom)+sigOffX);
+for(let i=start;i<sigData.length&&x<c.width;i++){
+let w=Math.max(1,sigData[i]*sigZoom/100);
+let y=high?mid-mid*0.7:mid+mid*0.7;
+if(i===start)ctx.moveTo(x,y);
+ctx.lineTo(x,y);x+=w;ctx.lineTo(x,y);
+high=!high;
+}
+ctx.stroke();
+if(sigMark>=0){ctx.strokeStyle='#ff4141';ctx.beginPath();ctx.moveTo(sigMark,0);ctx.lineTo(sigMark,c.height);ctx.stroke();}
+document.getElementById('sig-offset').textContent=sigOffX;
+}
+function sigRecReset(){sigZoom=1;sigOffX=0;sigMark=-1;document.getElementById('sig-zoom').textContent='1x';let c=document.getElementById('sig-canvas');drawSig(c.getContext('2d'),c);}
+function sigRecPause(){sigPaused=!sigPaused;event.target.textContent=sigPaused?'Resume':'Pause';}
+/* ── PCAP Dashboard ────────────────────────────────────────────────────── */
+let pcapWs=null,pcapEntries=[];
+function initPcap(){
+if(pcapWs&&pcapWs.readyState<=1)return;
+let lg=document.getElementById('pcap-log');
+pcapWs=new WebSocket('ws://'+location.host+'/ws');
+pcapWs.onopen=function(){lg.textContent='PCAP WebSocket connected';};
+pcapWs.onmessage=function(e){
+try{let m=JSON.parse(e.data);if(m.type==='wifi_pkt'){
+let idx=pcapEntries.findIndex(function(p){return p.ssid===m.ssid;});
+if(idx>=0){pcapEntries[idx].rssi=m.rssi;pcapEntries[idx].ch=m.ch;pcapEntries[idx].enc=m.enc;pcapEntries[idx].ts=Date.now();}
+else{pcapEntries.push({ssid:m.ssid,rssi:m.rssi,ch:m.ch,enc:m.enc,ts:Date.now()});if(pcapEntries.length>50)pcapEntries.shift();}
+renderPcapTable();drawPcapRadar();
+}}catch(err){}
+};
+pcapWs.onerror=function(){lg.textContent='WS error';};
+}
+function renderPcapTable(){
+let tb=document.getElementById('pcap-body');let h='';
+pcapEntries.forEach(function(p){h+='<tr style="border-bottom:1px solid #1a1a1a"><td style="padding:4px">'+esc(p.ssid)+'</td><td style="padding:4px">'+p.rssi+'</td><td style="padding:4px">'+p.ch+'</td><td style="padding:4px">'+esc(p.enc)+'</td></tr>';});
+tb.innerHTML=h;
+}
+let pcapSortKey='rssi';
+function pcapSort(k){pcapSortKey=k;pcapEntries.sort(function(a,b){return a[k]>b[k]?-1:1;});renderPcapTable();}
+function drawPcapRadar(){
+let c=document.getElementById('pcap-radar');let ctx=c.getContext('2d');
+c.width=c.clientWidth;c.height=c.clientHeight;
+let cx=c.width/2,cy=c.height/2,mr=Math.min(cx,cy)-10;
+ctx.fillStyle='#0a0a0a';ctx.fillRect(0,0,c.width,c.height);
+ctx.strokeStyle='#1a1a1a';
+for(let r=1;r<=3;r++){ctx.beginPath();ctx.arc(cx,cy,mr*r/3,0,Math.PI*2);ctx.stroke();}
+pcapEntries.forEach(function(p){
+let dist=Math.max(0.05,1-(-p.rssi)/100)*mr;
+let angle=(p.ch/14)*Math.PI*2;
+let px=cx+Math.cos(angle)*dist,py=cy+Math.sin(angle)*dist;
+ctx.fillStyle='#00ff41';ctx.beginPath();ctx.arc(px,py,4,0,Math.PI*2);ctx.fill();
+ctx.fillStyle='#0a0';ctx.font='9px monospace';ctx.fillText(p.ssid.substring(0,8),px+6,py+3);
+});
+}
+/* ── NFC Hex Editor ────────────────────────────────────────────────────── */
+let nfcDump=null;
+function nfcLoad(){
+let path=document.getElementById('nfc-path').value.trim();
+if(!path){document.getElementById('nfc-log').textContent='Enter a file path';return;}
+api('/api/files/download?path='+encodeURIComponent(path)).then(function(r){return r;}).catch(function(){});
+fetch('/api/files/download?path='+encodeURIComponent(path)).then(function(r){return r.arrayBuffer();}).then(function(ab){
+nfcDump=new Uint8Array(ab);renderNfcHex();
+document.getElementById('nfc-log').textContent='Loaded '+nfcDump.length+' bytes from '+path;
+}).catch(function(e){document.getElementById('nfc-log').textContent='Load error: '+e.message;});
+}
+function renderNfcHex(){
+if(!nfcDump)return;
+let el=document.getElementById('nfc-sectors');let h='';
+let sectors=Math.ceil(nfcDump.length/64);
+for(let s=0;s<sectors;s++){
+h+='<div style="margin-bottom:8px;border:1px solid #1a1a1a;padding:6px;border-radius:4px">';
+h+='<div style="color:#00ff41;margin-bottom:4px">Sector '+s+'</div>';
+for(let b=0;b<4;b++){
+let off=s*64+b*16;if(off>=nfcDump.length)break;
+h+='<div style="display:flex;gap:4px;align-items:center"><span style="color:#666;width:40px">'+off.toString(16).padStart(4,'0')+'</span>';
+for(let i=0;i<16&&(off+i)<nfcDump.length;i++){
+h+='<input type="text" maxlength="2" value="'+nfcDump[off+i].toString(16).padStart(2,'0').toUpperCase()+'" data-off="'+(off+i)+'" style="width:24px;padding:2px;text-align:center;font-size:10px;background:#111;color:#00ff41;border:1px solid #333" onchange="nfcEdit(this)">';
+}
+h+='</div>';
+}
+h+='</div>';
+}
+el.innerHTML=h;
+}
+function nfcEdit(el){
+let off=parseInt(el.dataset.off);let val=parseInt(el.value,16);
+if(isNaN(val)||val<0||val>255){el.style.borderColor='#ff4141';return;}
+el.style.borderColor='#00ff41';nfcDump[off]=val;
+}
+function nfcSave(){
+if(!nfcDump){document.getElementById('nfc-log').textContent='No data loaded';return;}
+let path=document.getElementById('nfc-path').value.trim();
+if(!path){document.getElementById('nfc-log').textContent='Enter a file path';return;}
+let hex='';for(let i=0;i<nfcDump.length;i++)hex+=nfcDump[i].toString(16).padStart(2,'0');
+api('/api/nfc/write',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:path,hex:hex})}).then(function(d){
+document.getElementById('nfc-log').textContent=d.ok?'Saved to '+path:'Error: '+(d.error||'unknown');
+});
+}
+/* ── Remote Terminal ───────────────────────────────────────────────────── */
+let termWs=null;
+function initTerm(){
+if(termWs&&termWs.readyState<=1)return;
+let out=document.getElementById('term-output');
+termWs=new WebSocket('ws://'+location.host+'/ws');
+termWs.onopen=function(){out.textContent+='[Connected to HackOS Terminal]\\n';};
+termWs.onmessage=function(e){
+try{let m=JSON.parse(e.data);if(m.type==='term_out'){out.textContent+=m.text+'\\n';out.scrollTop=out.scrollHeight;}}catch(err){}
+};
+termWs.onerror=function(){out.textContent+='[WS Error]\\n';};
+}
+function termSend(){
+let inp=document.getElementById('term-input');let cmd=inp.value.trim();
+if(!cmd||!termWs)return;
+document.getElementById('term-output').textContent+='> '+cmd+'\\n';
+termWs.send(JSON.stringify({type:'term_cmd',cmd:cmd}));
+inp.value='';
+}
+function termBtn(b){
+if(!termWs)return;
+termWs.send(JSON.stringify({type:'term_btn',btn:b}));
+document.getElementById('term-output').textContent+='['+b.toUpperCase()+']\\n';
+}
 loadStatus();
 </script>
 </body>
@@ -456,6 +683,9 @@ static esp_err_t httpApiPluginsDeleteHandler(httpd_req_t *req);
 static esp_err_t httpApiPluginsReloadHandler(httpd_req_t *req);
 static esp_err_t httpApiAssetsHandler(httpd_req_t *req);
 static esp_err_t httpApiAssetsDeployHandler(httpd_req_t *req);
+static esp_err_t httpApiSystemStatsHandler(httpd_req_t *req);
+static esp_err_t httpApiScreenshotHandler(httpd_req_t *req);
+static esp_err_t httpApiNfcWriteHandler(httpd_req_t *req);
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // RemoteDashboardApp
@@ -712,8 +942,14 @@ private:
         registerRoute("/api/plugins/reload",   HTTP_POST, httpApiPluginsReloadHandler);
         registerRoute("/api/assets",            HTTP_GET,  httpApiAssetsHandler);
         registerRoute("/api/assets/deploy",     HTTP_POST, httpApiAssetsDeployHandler);
+        registerRoute("/api/system/stats",      HTTP_GET,  httpApiSystemStatsHandler);
+        registerRoute("/api/ui/screenshot",     HTTP_POST, httpApiScreenshotHandler);
+        registerRoute("/api/nfc/write",         HTTP_POST, httpApiNfcWriteHandler);
 
-        ESP_LOGI(TAG_RD, "HTTP server started with %d endpoints", 17);
+        // Register WebSocket endpoint
+        hackos::net::WebSocketServer::instance().start(httpServer_, "/ws");
+
+        ESP_LOGI(TAG_RD, "HTTP server started with %d endpoints", 21);
         return true;
     }
 
@@ -2210,6 +2446,225 @@ static esp_err_t httpApiAssetsDeployHandler(httpd_req_t *req)
 
     httpd_resp_set_type(req, "application/json");
     return httpd_resp_send(req, json, strlen(json));
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// System Stats & Screenshot API Handlers
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// GET /api/system/stats – per-core CPU usage, free RAM, chip temperature.
+static esp_err_t httpApiSystemStatsHandler(httpd_req_t *req)
+{
+    const uint32_t freeHeap   = ESP.getFreeHeap();
+    const uint32_t totalHeap  = ESP.getHeapSize();
+    const uint32_t minFree    = ESP.getMinFreeHeap();
+    const uint32_t freePsram  = ESP.getFreePsram();
+    const uint32_t uptimeMs   = static_cast<uint32_t>(millis());
+
+    // ESP32 internal temperature sensor (Arduino API).
+    float chipTemp = 0.0f;
+#ifdef ESP32
+    chipTemp = temperatureRead();
+#endif
+
+    char json[512];
+    snprintf(json, sizeof(json),
+             "{\"free_heap\":%lu,\"total_heap\":%lu,\"min_free_heap\":%lu,"
+             "\"free_psram\":%lu,\"chip_temp_c\":%.1f,"
+             "\"uptime_ms\":%lu,\"sdk\":\"%s\"}",
+             static_cast<unsigned long>(freeHeap),
+             static_cast<unsigned long>(totalHeap),
+             static_cast<unsigned long>(minFree),
+             static_cast<unsigned long>(freePsram),
+             static_cast<double>(chipTemp),
+             static_cast<unsigned long>(uptimeMs),
+             ESP.getSdkVersion());
+
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_send(req, json, strlen(json));
+}
+
+/// POST /api/ui/screenshot – return the OLED frame buffer as raw BMP.
+static esp_err_t httpApiScreenshotHandler(httpd_req_t *req)
+{
+    auto &disp = DisplayManager::instance();
+    uint8_t *fb = disp.getDisplayBuffer();
+    if (fb == nullptr)
+    {
+        httpd_resp_set_type(req, "application/json");
+        return httpd_resp_send(req, "{\"error\":\"display not ready\"}", 28);
+    }
+
+    // Build a minimal 1-bpp BMP (128x64).
+    static constexpr uint16_t BMP_W = 128U;
+    static constexpr uint16_t BMP_H = 64U;
+    static constexpr uint32_t ROW_BYTES = BMP_W / 8U;   // 16 bytes per row
+    static constexpr uint32_t IMG_SIZE  = ROW_BYTES * BMP_H; // 1024
+    static constexpr uint32_t HEADER_SIZE = 62U; // BMP header + 2-colour palette
+    static constexpr uint32_t FILE_SIZE = HEADER_SIZE + IMG_SIZE;
+
+    uint8_t bmp[FILE_SIZE];
+    memset(bmp, 0, sizeof(bmp));
+
+    // ── BMP file header ─────────────────────────────────────────────────
+    bmp[0] = 'B'; bmp[1] = 'M';
+    bmp[2] = FILE_SIZE & 0xFF; bmp[3] = (FILE_SIZE >> 8) & 0xFF;
+    bmp[10] = HEADER_SIZE;
+
+    // ── DIB header (BITMAPINFOHEADER, 40 bytes) ─────────────────────────
+    bmp[14] = 40;
+    bmp[18] = BMP_W & 0xFF; bmp[19] = (BMP_W >> 8) & 0xFF;
+    bmp[22] = BMP_H & 0xFF; bmp[23] = (BMP_H >> 8) & 0xFF;
+    bmp[26] = 1;   // planes
+    bmp[28] = 1;   // bits per pixel
+    bmp[34] = IMG_SIZE & 0xFF; bmp[35] = (IMG_SIZE >> 8) & 0xFF;
+    bmp[46] = 2;   // colours used
+
+    // ── Colour palette (2 entries × 4 bytes) ────────────────────────────
+    // Index 0: black  (B, G, R, 0)
+    bmp[54] = 0x00; bmp[55] = 0x00; bmp[56] = 0x00; bmp[57] = 0x00;
+    // Index 1: green  (#00FF41)
+    bmp[58] = 0x41; bmp[59] = 0xFF; bmp[60] = 0x00; bmp[61] = 0x00;
+
+    // ── Pixel data (SSD1306 page → BMP rows, bottom-up) ────────────────
+    for (int16_t row = 0; row < BMP_H; ++row)
+    {
+        // BMP stores rows bottom-to-top.
+        int16_t srcY = (BMP_H - 1) - row;
+        uint32_t dstOffset = HEADER_SIZE + static_cast<uint32_t>(row) * ROW_BYTES;
+
+        for (int16_t col = 0; col < BMP_W; ++col)
+        {
+            // Read pixel from SSD1306 page-addressed buffer.
+            size_t page = static_cast<size_t>(srcY) / 8U;
+            uint8_t bit = static_cast<uint8_t>(srcY) & 7U;
+            bool on = (fb[page * BMP_W + col] >> bit) & 1U;
+
+            if (on)
+            {
+                // BMP 1-bpp: MSB first within each byte.
+                uint8_t byteIdx = static_cast<uint8_t>(col / 8U);
+                uint8_t bitIdx  = 7U - static_cast<uint8_t>(col & 7U);
+                bmp[dstOffset + byteIdx] |= (1U << bitIdx);
+            }
+        }
+    }
+
+    httpd_resp_set_type(req, "image/bmp");
+    httpd_resp_set_hdr(req, "Content-Disposition",
+                       "attachment; filename=\"hackos_screen.bmp\"");
+    return httpd_resp_send(req, reinterpret_cast<const char *>(bmp), FILE_SIZE);
+}
+
+/// POST /api/nfc/write – write hex data back to a file on SD.
+static esp_err_t httpApiNfcWriteHandler(httpd_req_t *req)
+{
+    char buf[POST_BUF_MAX];
+    int received = httpd_req_recv(req, buf, sizeof(buf) - 1);
+    if (received <= 0)
+    {
+        httpd_resp_set_type(req, "application/json");
+        return httpd_resp_send(req, "{\"error\":\"no body\"}", 19);
+    }
+    buf[received] = '\0';
+
+    // Parse "path" field.
+    const char *pathKey = strstr(buf, "\"path\"");
+    if (pathKey == nullptr)
+    {
+        httpd_resp_set_type(req, "application/json");
+        return httpd_resp_send(req, "{\"error\":\"missing path\"}", 23);
+    }
+    const char *ps = strchr(pathKey + 6, '"');
+    if (ps == nullptr)
+    {
+        httpd_resp_set_type(req, "application/json");
+        return httpd_resp_send(req, "{\"error\":\"bad path\"}", 20);
+    }
+    ++ps;
+    const char *pe = strchr(ps, '"');
+    if (pe == nullptr || (pe - ps) >= 120)
+    {
+        httpd_resp_set_type(req, "application/json");
+        return httpd_resp_send(req, "{\"error\":\"bad path\"}", 20);
+    }
+    char path[128];
+    memcpy(path, ps, static_cast<size_t>(pe - ps));
+    path[pe - ps] = '\0';
+
+    // Validate path.
+    if (strncmp(path, "/ext", 4) != 0 || strstr(path, "..") != nullptr)
+    {
+        httpd_resp_set_type(req, "application/json");
+        return httpd_resp_send(req, "{\"error\":\"invalid path\"}", 23);
+    }
+
+    // Parse "hex" field.
+    const char *hexKey = strstr(buf, "\"hex\"");
+    if (hexKey == nullptr)
+    {
+        httpd_resp_set_type(req, "application/json");
+        return httpd_resp_send(req, "{\"error\":\"missing hex\"}", 22);
+    }
+    const char *hs = strchr(hexKey + 4, '"');
+    if (hs == nullptr)
+    {
+        httpd_resp_set_type(req, "application/json");
+        return httpd_resp_send(req, "{\"error\":\"bad hex\"}", 19);
+    }
+    ++hs;
+    const char *he = strchr(hs, '"');
+    if (he == nullptr)
+    {
+        httpd_resp_set_type(req, "application/json");
+        return httpd_resp_send(req, "{\"error\":\"bad hex\"}", 19);
+    }
+
+    size_t hexLen = static_cast<size_t>(he - hs);
+    size_t dataLen = hexLen / 2U;
+    if (dataLen == 0U || dataLen > 2048U)
+    {
+        httpd_resp_set_type(req, "application/json");
+        return httpd_resp_send(req, "{\"error\":\"data too large\"}", 25);
+    }
+
+    // Convert hex string to binary (chunked write to save stack).
+    auto &vfs = hackos::storage::VirtualFS::instance();
+    fs::File file = vfs.open(path, "w");
+    if (!file)
+    {
+        httpd_resp_set_type(req, "application/json");
+        return httpd_resp_send(req, "{\"error\":\"write failed\"}", 23);
+    }
+
+    uint8_t chunk[64];
+    size_t ci = 0U;
+    for (size_t i = 0U; i + 1U < hexLen; i += 2U)
+    {
+        auto hexVal = [](char c) -> uint8_t {
+            if (c >= '0' && c <= '9') return static_cast<uint8_t>(c - '0');
+            if (c >= 'a' && c <= 'f') return static_cast<uint8_t>(c - 'a' + 10);
+            if (c >= 'A' && c <= 'F') return static_cast<uint8_t>(c - 'A' + 10);
+            return 0U;
+        };
+        chunk[ci++] = static_cast<uint8_t>((hexVal(hs[i]) << 4U) | hexVal(hs[i + 1U]));
+        if (ci >= sizeof(chunk))
+        {
+            file.write(chunk, ci);
+            ci = 0U;
+        }
+    }
+    if (ci > 0U)
+    {
+        file.write(chunk, ci);
+    }
+    file.close();
+
+    ESP_LOGI(TAG_RD, "NFC write: %s (%u bytes)", path,
+             static_cast<unsigned>(dataLen));
+
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_send(req, "{\"ok\":true}", 11);
 }
 
 } // namespace
