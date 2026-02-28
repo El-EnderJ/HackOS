@@ -1,7 +1,7 @@
 /**
  * @file badbt_app.cpp
  * @brief BadBT App – Bluetooth HID keyboard injector for authorised
- *        penetration testing.
+ *        penetration testing.  Duck++ (DuckyScript 2.0) interpreter.
  *
  * @note The BLE HID profile uses "Just Works" pairing (ESP_IO_CAP_NONE)
  *       intentionally so the keyboard pairs without user PIN entry.  The
@@ -15,14 +15,27 @@
  *    under a stealthy name (e.g. "Apple Magic Keyboard") to blend in
  *    with legitimate peripherals.
  *
- *  - **DuckyScript Interpreter**: Reads plain-text script files from the
- *    SD card (`/ext/badbt/*.txt`) and parses commands:
+ *  - **DuckyScript 2.0 (Duck++) Interpreter**: Reads plain-text script
+ *    files from the SD card (`/ext/badbt/*.txt`) and parses commands:
  *      • STRING <text>      – types the text character by character
  *      • DELAY <ms>         – pauses for the specified milliseconds
  *      • GUI R / WINDOWS R  – GUI modifier + key
  *      • ENTER, TAB, ESC, UP, DOWN, LEFT, RIGHT, etc.
  *      • CTRL, ALT, SHIFT   – modifier + next key
  *      • REM                – comment (ignored)
+ *      • REPEAT <n>         – repeat previous line n times
+ *      • WAIT_FOR_BUTTON    – pause until joystick button press
+ *      • IF_CONNECTED / END_IF – conditional BLE-connected block
+ *      • VAR <name> <value> – define a script variable
+ *      • STRING $VAR_NAME   – variable injection in text
+ *      • CHAIN <script.txt> – queue the next payload for execution
+ *
+ *  - **Variable Injection**: Scripts may reference built-in variables
+ *    ($DEVICE_NAME, $LAST_NFC_UID, $WIFI_SSID) or user-defined
+ *    variables set with the VAR command.
+ *
+ *  - **Multi-Payload Chaining**: The CHAIN command queues a follow-up
+ *    script that starts automatically after the current one finishes.
  *
  *  - **Payload Manager**: Lists scripts in `/ext/badbt/`, lets the user
  *    select one, pairs with a nearby device, and "types" the payload.
@@ -75,6 +88,12 @@ static constexpr size_t  LINE_BUF_SIZE        = 256U;
 static constexpr size_t  VISIBLE_ROWS         = 3U;
 static constexpr uint32_t KEY_SEND_INTERVAL_MS = 30U;   ///< Delay between HID reports
 static constexpr uint32_t DEFAULT_DELAY_MS     = 100U;  ///< Default DELAY if not specified
+
+// ── Duck++ variable store tunables ───────────────────────────────────────────
+static constexpr size_t  MAX_VARS             = 8U;     ///< Max user-defined variables
+static constexpr size_t  VAR_NAME_LEN         = 24U;    ///< Max variable name length
+static constexpr size_t  VAR_VALUE_LEN        = 64U;    ///< Max variable value length
+static constexpr size_t  EXPANDED_BUF_SIZE    = 512U;   ///< Buffer for variable expansion
 
 /// Directory containing DuckyScript payloads on SD card.
 static constexpr const char *SCRIPTS_DIR = "/ext/badbt";
@@ -276,6 +295,13 @@ enum class DuckyCmd : uint8_t
     CMD_CTRL_ALT,
     CMD_CTRL_SHIFT,
     CMD_ALT_SHIFT,
+    // ── Duck++ extended commands ─────────────────────────────
+    CMD_REPEAT,           ///< REPEAT X – repeat previous line X times
+    CMD_WAIT_FOR_BUTTON,  ///< WAIT_FOR_BUTTON – pause until button press
+    CMD_IF_CONNECTED,     ///< IF_CONNECTED – conditional block if BLE paired
+    CMD_END_IF,           ///< END_IF – close conditional block
+    CMD_VAR,              ///< VAR name value – define a user variable
+    CMD_CHAIN,            ///< CHAIN script.txt – queue next payload
 };
 
 // ── Parsed DuckyScript line ──────────────────────────────────────────────────
@@ -417,6 +443,13 @@ static DuckyCmd parseCommand(const char *token)
     if (std::strcmp(token, "CTRL-ALT") == 0)    return DuckyCmd::CMD_CTRL_ALT;
     if (std::strcmp(token, "CTRL-SHIFT") == 0)  return DuckyCmd::CMD_CTRL_SHIFT;
     if (std::strcmp(token, "ALT-SHIFT") == 0)   return DuckyCmd::CMD_ALT_SHIFT;
+    // Duck++ extended commands
+    if (std::strcmp(token, "REPEAT") == 0)          return DuckyCmd::CMD_REPEAT;
+    if (std::strcmp(token, "WAIT_FOR_BUTTON") == 0) return DuckyCmd::CMD_WAIT_FOR_BUTTON;
+    if (std::strcmp(token, "IF_CONNECTED") == 0)    return DuckyCmd::CMD_IF_CONNECTED;
+    if (std::strcmp(token, "END_IF") == 0)           return DuckyCmd::CMD_END_IF;
+    if (std::strcmp(token, "VAR") == 0)              return DuckyCmd::CMD_VAR;
+    if (std::strcmp(token, "CHAIN") == 0)            return DuckyCmd::CMD_CHAIN;
     return DuckyCmd::CMD_NONE;
 }
 
@@ -508,11 +541,21 @@ public:
           execCharIdx_(0U),
           execLineCount_(0U),
           execDelayUntilMs_(0U),
-          lastKeySendMs_(0U)
+          lastKeySendMs_(0U),
+          // Duck++ state
+          repeatCount_(0U),
+          waitingForButton_(false),
+          ifSkipDepth_(0U),
+          varCount_(0U),
+          hasChainScript_(false)
     {
         std::memset(scriptNames_, 0, sizeof(scriptNames_));
         std::memset(scriptNameBufs_, 0, sizeof(scriptNameBufs_));
         std::memset(scriptBuf_, 0, sizeof(scriptBuf_));
+        std::memset(varNames_, 0, sizeof(varNames_));
+        std::memset(varValues_, 0, sizeof(varValues_));
+        std::memset(chainScriptName_, 0, sizeof(chainScriptName_));
+        std::memset(expandedBuf_, 0, sizeof(expandedBuf_));
     }
 
     // ── Connection state (set from GATTS callback) ──────────────────────
@@ -555,6 +598,17 @@ protected:
         }
 
         const auto input = static_cast<InputManager::InputEvent>(event->arg0);
+
+        // Duck++: If waiting for button press during script execution
+        if (waitingForButton_ &&
+            input == InputManager::InputEvent::BUTTON_PRESS)
+        {
+            waitingForButton_ = false;
+            advanceLine();
+            needsRedraw_ = true;
+            return;
+        }
+
         handleInput(input);
     }
 
@@ -674,6 +728,29 @@ private:
     static constexpr size_t MAX_LINES = 128U;
     DuckyLine parsedLines_[MAX_LINES];
 
+    // ── Duck++ extended state ───────────────────────────────────────────
+
+    /// REPEAT command: remaining iterations for the previous line.
+    size_t   repeatCount_;
+
+    /// WAIT_FOR_BUTTON: true while paused waiting for joystick press.
+    bool     waitingForButton_;
+
+    /// IF_CONNECTED: nesting depth of skipped conditional blocks.
+    size_t   ifSkipDepth_;
+
+    /// User-defined variable store (set by VAR command).
+    char     varNames_[MAX_VARS][VAR_NAME_LEN];
+    char     varValues_[MAX_VARS][VAR_VALUE_LEN];
+    size_t   varCount_;
+
+    /// Multi-payload chain: name of next script to execute.
+    char     chainScriptName_[SCRIPT_NAME_LEN];
+    bool     hasChainScript_;
+
+    /// Scratch buffer for variable expansion.
+    char     expandedBuf_[EXPANDED_BUF_SIZE];
+
     // ── Dirty/redraw helpers ────────────────────────────────────────────
 
     bool anyWidgetDirty() const
@@ -722,7 +799,11 @@ private:
                       static_cast<unsigned>(execLineCount_));
         DisplayManager::instance().drawText(2, 24, buf);
 
-        if (scriptCount_ > 0U)
+        if (waitingForButton_)
+        {
+            DisplayManager::instance().drawText(2, 34, "[WAIT_FOR_BUTTON]");
+        }
+        else if (scriptCount_ > 0U)
         {
             std::snprintf(buf, sizeof(buf), "Script: %.18s",
                           scriptNameBufs_[selectedScript_]);
@@ -1156,6 +1237,14 @@ private:
         execDelayUntilMs_ = 0U;
         lastKeySendMs_ = 0U;
 
+        // Reset Duck++ state
+        repeatCount_     = 0U;
+        waitingForButton_ = false;
+        ifSkipDepth_     = 0U;
+        varCount_        = 0U;
+        hasChainScript_  = false;
+        std::memset(chainScriptName_, 0, sizeof(chainScriptName_));
+
         initBle();
         startAdvertising();
         transitionTo(BadBtState::WAITING_PAIR);
@@ -1233,6 +1322,192 @@ private:
         sendKeyReport(MOD_NONE, KEY_NONE);
     }
 
+    // ── Duck++ variable management ──────────────────────────────────────
+
+    /// Set a user variable.  Overwrites if the name already exists.
+    void setVar(const char *name, const char *value)
+    {
+        if (name == nullptr || name[0] == '\0')
+        {
+            return;
+        }
+
+        // Check for existing variable to overwrite
+        for (size_t i = 0U; i < varCount_; ++i)
+        {
+            if (std::strcmp(varNames_[i], name) == 0)
+            {
+                std::strncpy(varValues_[i], value, VAR_VALUE_LEN - 1U);
+                varValues_[i][VAR_VALUE_LEN - 1U] = '\0';
+                return;
+            }
+        }
+
+        // Add new variable if there's room
+        if (varCount_ < MAX_VARS)
+        {
+            std::strncpy(varNames_[varCount_], name, VAR_NAME_LEN - 1U);
+            varNames_[varCount_][VAR_NAME_LEN - 1U] = '\0';
+            std::strncpy(varValues_[varCount_], value, VAR_VALUE_LEN - 1U);
+            varValues_[varCount_][VAR_VALUE_LEN - 1U] = '\0';
+            ++varCount_;
+            ESP_LOGD(TAG_BBT, "VAR %s = %s", name, value);
+        }
+        else
+        {
+            ESP_LOGW(TAG_BBT, "Variable store full (max %u)", static_cast<unsigned>(MAX_VARS));
+        }
+    }
+
+    /// Look up a variable by name.  Returns the value or nullptr.
+    const char *getVar(const char *name) const
+    {
+        if (name == nullptr)
+        {
+            return nullptr;
+        }
+
+        // Built-in system variables
+        if (std::strcmp(name, "DEVICE_NAME") == 0)
+        {
+            return DEVICE_NAMES[selectedNameIdx_];
+        }
+        if (std::strcmp(name, "LAST_NFC_UID") == 0)
+        {
+            // Placeholder – populated from NFC subsystem captures
+            return "(no_uid)";
+        }
+        if (std::strcmp(name, "WIFI_SSID") == 0)
+        {
+            // Placeholder – populated from WiFi subsystem
+            return "(no_ssid)";
+        }
+
+        // User-defined variables
+        for (size_t i = 0U; i < varCount_; ++i)
+        {
+            if (std::strcmp(varNames_[i], name) == 0)
+            {
+                return varValues_[i];
+            }
+        }
+        return nullptr;
+    }
+
+    /// Expand $VAR_NAME tokens in a string.  Returns pointer to expandedBuf_.
+    const char *expandVars(const char *input)
+    {
+        if (input == nullptr)
+        {
+            expandedBuf_[0] = '\0';
+            return expandedBuf_;
+        }
+
+        size_t outIdx = 0U;
+        size_t inIdx  = 0U;
+        const size_t inLen = std::strlen(input);
+
+        while (inIdx < inLen && outIdx < EXPANDED_BUF_SIZE - 1U)
+        {
+            if (input[inIdx] == '$')
+            {
+                // Extract variable name (alphanumeric + underscore)
+                size_t nameStart = inIdx + 1U;
+                size_t nameEnd   = nameStart;
+                while (nameEnd < inLen &&
+                       ((input[nameEnd] >= 'A' && input[nameEnd] <= 'Z') ||
+                        (input[nameEnd] >= 'a' && input[nameEnd] <= 'z') ||
+                        (input[nameEnd] >= '0' && input[nameEnd] <= '9') ||
+                        input[nameEnd] == '_'))
+                {
+                    ++nameEnd;
+                }
+
+                if (nameEnd > nameStart)
+                {
+                    char varName[VAR_NAME_LEN];
+                    const size_t nameLen = nameEnd - nameStart;
+                    const size_t copyLen = (nameLen < VAR_NAME_LEN - 1U)
+                                               ? nameLen : (VAR_NAME_LEN - 1U);
+                    std::memcpy(varName, &input[nameStart], copyLen);
+                    varName[copyLen] = '\0';
+
+                    const char *val = getVar(varName);
+                    if (val != nullptr)
+                    {
+                        const size_t valLen = std::strlen(val);
+                        const size_t space  = EXPANDED_BUF_SIZE - 1U - outIdx;
+                        const size_t toCopy = (valLen < space) ? valLen : space;
+                        std::memcpy(&expandedBuf_[outIdx], val, toCopy);
+                        outIdx += toCopy;
+                    }
+                    else
+                    {
+                        // Unknown variable – keep the literal $NAME
+                        const size_t tokenLen = nameEnd - inIdx;
+                        const size_t space    = EXPANDED_BUF_SIZE - 1U - outIdx;
+                        const size_t toCopy   = (tokenLen < space) ? tokenLen : space;
+                        std::memcpy(&expandedBuf_[outIdx], &input[inIdx], toCopy);
+                        outIdx += toCopy;
+                    }
+                    inIdx = nameEnd;
+                }
+                else
+                {
+                    // Bare '$' with no valid name following
+                    expandedBuf_[outIdx++] = '$';
+                    ++inIdx;
+                }
+            }
+            else
+            {
+                expandedBuf_[outIdx++] = input[inIdx++];
+            }
+        }
+
+        expandedBuf_[outIdx] = '\0';
+        return expandedBuf_;
+    }
+
+    /// Load a chained script by filename (from SCRIPTS_DIR).
+    bool loadChainScript(const char *filename)
+    {
+        if (filename == nullptr || filename[0] == '\0')
+        {
+            return false;
+        }
+
+        char path[80];
+        std::snprintf(path, sizeof(path), "%s/%s", SCRIPTS_DIR, filename);
+
+        size_t bytesRead = 0U;
+        const bool ok = StorageManager::instance().readFile(
+            path, scriptBuf_, SCRIPT_BUF_SIZE - 1U, &bytesRead);
+
+        if (!ok || bytesRead == 0U)
+        {
+            ESP_LOGE(TAG_BBT, "Failed to read chained script: %s", path);
+            return false;
+        }
+
+        scriptBuf_[bytesRead] = '\0';
+        parseScript(reinterpret_cast<const char *>(scriptBuf_), bytesRead);
+        execLineIdx_  = 0U;
+        execCharIdx_  = 0U;
+        execDelayUntilMs_ = 0U;
+        repeatCount_  = 0U;
+        waitingForButton_ = false;
+        ifSkipDepth_  = 0U;
+        // Preserve variables across chain; reset chain target
+        hasChainScript_ = false;
+        std::memset(chainScriptName_, 0, sizeof(chainScriptName_));
+
+        ESP_LOGI(TAG_BBT, "Chained script loaded: %s (%u bytes, %u lines)",
+                 path, static_cast<unsigned>(bytesRead),
+                 static_cast<unsigned>(execLineCount_));
+        return true;
+    }
+
     // ── Script execution tick ───────────────────────────────────────────
 
     void performExecTick()
@@ -1241,11 +1516,29 @@ private:
         {
             if (execLineIdx_ >= execLineCount_ && scriptLoaded_)
             {
+                // Duck++: Multi-payload chaining
+                if (hasChainScript_)
+                {
+                    ESP_LOGI(TAG_BBT, "Chaining to next script: %s", chainScriptName_);
+                    if (loadChainScript(chainScriptName_))
+                    {
+                        needsRedraw_ = true;
+                        return; // Continue execution with the chained script
+                    }
+                    ESP_LOGW(TAG_BBT, "Chain script failed – finishing");
+                }
+
                 transitionTo(BadBtState::DONE);
                 ESP_LOGI(TAG_BBT, "Script execution complete");
                 EventSystem::instance().postEvent(
                     {EventType::EVT_XP_EARNED, XP_BADBT_RUN, 0, nullptr});
             }
+            return;
+        }
+
+        // Duck++: WAIT_FOR_BUTTON pauses execution
+        if (waitingForButton_)
+        {
             return;
         }
 
@@ -1266,6 +1559,22 @@ private:
         }
 
         const DuckyLine &dl = parsedLines_[execLineIdx_];
+
+        // ── Duck++: IF_CONNECTED skip logic ─────────────────────────────
+        if (ifSkipDepth_ > 0U)
+        {
+            // We are inside a skipped IF_CONNECTED block
+            if (dl.cmd == DuckyCmd::CMD_IF_CONNECTED)
+            {
+                ++ifSkipDepth_; // Nested IF – increase depth
+            }
+            else if (dl.cmd == DuckyCmd::CMD_END_IF)
+            {
+                --ifSkipDepth_;
+            }
+            advanceLine();
+            return;
+        }
 
         switch (dl.cmd)
         {
@@ -1292,10 +1601,15 @@ private:
         }
 
         case DuckyCmd::CMD_STRING:
+        {
+            // Duck++: Expand variables in the string argument
+            const char *text = expandVars(dl.arg);
+            const size_t textLen = std::strlen(text);
+
             // Type one character per tick
-            if (execCharIdx_ < std::strlen(dl.arg))
+            if (execCharIdx_ < textLen)
             {
-                const CharKeyMapping m = charToHid(dl.arg[execCharIdx_]);
+                const CharKeyMapping m = charToHid(text[execCharIdx_]);
                 sendKeyPress(m.modifier, m.keycode);
                 lastKeySendMs_ = nowMs;
                 ++execCharIdx_;
@@ -1305,6 +1619,7 @@ private:
                 advanceLine();
             }
             break;
+        }
 
         case DuckyCmd::CMD_ENTER:
             sendKeyPress(MOD_NONE, KEY_ENTER);
@@ -1439,6 +1754,104 @@ private:
                           static_cast<uint8_t>(DuckyCmd::CMD_F1)));
             sendKeyPress(MOD_NONE, fKey);
             lastKeySendMs_ = nowMs;
+            advanceLine();
+            break;
+        }
+
+        // ── Duck++ extended commands ────────────────────────────────
+
+        case DuckyCmd::CMD_REPEAT:
+        {
+            if (repeatCount_ == 0U)
+            {
+                // First encounter – parse the repeat count
+                uint32_t count = 1U;
+                if (dl.arg[0] != '\0')
+                {
+                    char *endPtr = nullptr;
+                    const long v = std::strtol(dl.arg, &endPtr, 10);
+                    if (endPtr != dl.arg && v > 0)
+                    {
+                        count = static_cast<uint32_t>(v);
+                    }
+                }
+                repeatCount_ = count;
+            }
+
+            if (repeatCount_ > 0U && execLineIdx_ > 0U)
+            {
+                --repeatCount_;
+                // Jump back to the previous line to re-execute it
+                execLineIdx_ -= 1U;
+                execCharIdx_ = 0U;
+            }
+            else
+            {
+                repeatCount_ = 0U;
+                advanceLine();
+            }
+            break;
+        }
+
+        case DuckyCmd::CMD_WAIT_FOR_BUTTON:
+            waitingForButton_ = true;
+            ESP_LOGI(TAG_BBT, "WAIT_FOR_BUTTON – paused");
+            needsRedraw_ = true;
+            break;
+
+        case DuckyCmd::CMD_IF_CONNECTED:
+            if (!s_connected)
+            {
+                // Not connected – skip until matching END_IF
+                ifSkipDepth_ = 1U;
+                ESP_LOGD(TAG_BBT, "IF_CONNECTED: false – skipping block");
+            }
+            advanceLine();
+            break;
+
+        case DuckyCmd::CMD_END_IF:
+            // If we reach here, we were inside an active IF block – just continue
+            advanceLine();
+            break;
+
+        case DuckyCmd::CMD_VAR:
+        {
+            // Parse "VAR name value" – arg contains "name value"
+            char nameBuf[VAR_NAME_LEN];
+            nameBuf[0] = '\0';
+            const char *argPtr = dl.arg;
+
+            // Extract variable name
+            size_t ni = 0U;
+            while (*argPtr != '\0' && *argPtr != ' ' && *argPtr != '\t' &&
+                   ni < VAR_NAME_LEN - 1U)
+            {
+                nameBuf[ni++] = *argPtr++;
+            }
+            nameBuf[ni] = '\0';
+
+            // Skip whitespace
+            while (*argPtr == ' ' || *argPtr == '\t')
+            {
+                ++argPtr;
+            }
+
+            setVar(nameBuf, argPtr);
+            advanceLine();
+            break;
+        }
+
+        case DuckyCmd::CMD_CHAIN:
+        {
+            // Queue the next script filename for execution after current
+            const char *fname = dl.arg;
+            if (fname[0] != '\0')
+            {
+                std::strncpy(chainScriptName_, fname, SCRIPT_NAME_LEN - 1U);
+                chainScriptName_[SCRIPT_NAME_LEN - 1U] = '\0';
+                hasChainScript_ = true;
+                ESP_LOGI(TAG_BBT, "CHAIN queued: %s", chainScriptName_);
+            }
             advanceLine();
             break;
         }
