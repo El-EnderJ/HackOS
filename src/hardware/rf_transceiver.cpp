@@ -64,7 +64,7 @@ void RFTransceiver::deinit()
     ESP_LOGI(TAG_RF, "deinit");
 }
 
-bool RFTransceiver::available() const
+bool RFTransceiver::available()
 {
     return recvActive_ && rf_.available();
 }

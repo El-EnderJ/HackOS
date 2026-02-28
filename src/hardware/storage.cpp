@@ -6,6 +6,9 @@
 
 #include "config.h"
 
+// ── SPI Transaction Guard for shared bus ────────────────────────────────────
+static const SPISettings SD_SPI_SETTINGS(4000000, MSBFIRST, SPI_MODE0);
+
 StorageManager &StorageManager::instance()
 {
     static StorageManager manager;
@@ -26,7 +29,11 @@ bool StorageManager::mount()
     }
 
     SPI.begin();
-    if (!SD.begin(PIN_SD_CS, SPI))
+    SPI.beginTransaction(SD_SPI_SETTINGS);
+    const bool ok = SD.begin(PIN_SD_CS, SPI);
+    SPI.endTransaction();
+
+    if (!ok)
     {
         lastError_ = "Failed to mount SD";
         mounted_ = false;

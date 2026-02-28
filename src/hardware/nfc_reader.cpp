@@ -1,9 +1,28 @@
 #include "hardware/nfc_reader.h"
 
+#include <SPI.h>
 #include <cstring>
 #include <esp_log.h>
 
 #include "config.h"
+
+// ── SPI Transaction Guard for shared bus ────────────────────────────────────
+static const SPISettings NFC_SPI_SETTINGS(1000000, LSBFIRST, SPI_MODE0);
+
+/// @brief Helper: send data in PN532 target/emulation mode.
+/// Wraps setDataTarget with the required 0x8E (TgSetData) command prefix.
+static bool sendTargetResponse(Adafruit_PN532 &nfc, uint8_t *data, uint8_t len)
+{
+    // setDataTarget expects cmd[0] == 0x8E (TgSetData command code)
+    uint8_t buf[64];
+    if (static_cast<size_t>(len) + 1U > sizeof(buf))
+    {
+        return false;
+    }
+    buf[0] = 0x8EU;
+    std::memcpy(buf + 1, data, len);
+    return nfc.setDataTarget(buf, static_cast<uint8_t>(len + 1U)) == 1;
+}
 
 static constexpr const char *TAG_NFC = "NFCReader";
 
@@ -36,8 +55,11 @@ bool NFCReader::init()
         return true;
     }
 
+    SPI.beginTransaction(NFC_SPI_SETTINGS);
     nfc_.begin();
     const uint32_t version = nfc_.getFirmwareVersion();
+    SPI.endTransaction();
+
     if (version == 0U)
     {
         ESP_LOGE(TAG_NFC, "PN532 not found");
@@ -48,7 +70,9 @@ bool NFCReader::init()
              static_cast<unsigned long>((version >> 16) & 0xFFUL),
              static_cast<unsigned long>((version >> 8) & 0xFFUL));
 
+    SPI.beginTransaction(NFC_SPI_SETTINGS);
     nfc_.SAMConfig();
+    SPI.endTransaction();
     initialized_ = true;
     return true;
 }
@@ -71,8 +95,11 @@ bool NFCReader::readUID(uint8_t *uid, uint8_t *uidLen, uint16_t timeoutMs)
         return false;
     }
 
-    return nfc_.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, uidLen,
+    SPI.beginTransaction(NFC_SPI_SETTINGS);
+    const bool ok = nfc_.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, uidLen,
                                     timeoutMs) == 1;
+    SPI.endTransaction();
+    return ok;
 }
 
 bool NFCReader::authenticateBlock(const uint8_t *uid, uint8_t uidLen, uint8_t blockAddr)
@@ -87,8 +114,11 @@ bool NFCReader::authenticateBlock(const uint8_t *uid, uint8_t uidLen, uint8_t bl
     std::memcpy(key, DEFAULT_KEYS[0], 6U);
 
     // uid parameter also requires a non-const pointer per the Adafruit_PN532 API
-    return nfc_.mifareclassic_AuthenticateBlock(
+    SPI.beginTransaction(NFC_SPI_SETTINGS);
+    const bool ok = nfc_.mifareclassic_AuthenticateBlock(
                const_cast<uint8_t *>(uid), uidLen, blockAddr, 0U, key) == 1;
+    SPI.endTransaction();
+    return ok;
 }
 
 bool NFCReader::authenticateBlockWithKeys(const uint8_t *uid, uint8_t uidLen,
@@ -107,7 +137,11 @@ bool NFCReader::authenticateBlockWithKeys(const uint8_t *uid, uint8_t uidLen,
         {
             uint8_t tmpUid[7] = {};
             uint8_t tmpLen = 0U;
-            if (!nfc_.readPassiveTargetID(PN532_MIFARE_ISO14443A, tmpUid, &tmpLen, 200U))
+            SPI.beginTransaction(NFC_SPI_SETTINGS);
+            const bool reselected = nfc_.readPassiveTargetID(
+                PN532_MIFARE_ISO14443A, tmpUid, &tmpLen, 200U);
+            SPI.endTransaction();
+            if (!reselected)
             {
                 continue;
             }
@@ -116,8 +150,12 @@ bool NFCReader::authenticateBlockWithKeys(const uint8_t *uid, uint8_t uidLen,
         uint8_t key[6];
         std::memcpy(key, DEFAULT_KEYS[k], 6U);
 
-        if (nfc_.mifareclassic_AuthenticateBlock(
-                const_cast<uint8_t *>(uid), uidLen, blockAddr, 0U, key) == 1)
+        SPI.beginTransaction(NFC_SPI_SETTINGS);
+        const bool authOk = nfc_.mifareclassic_AuthenticateBlock(
+                const_cast<uint8_t *>(uid), uidLen, blockAddr, 0U, key) == 1;
+        SPI.endTransaction();
+
+        if (authOk)
         {
             if (keyIdx != nullptr)
             {
@@ -142,7 +180,10 @@ bool NFCReader::readBlock(uint8_t blockAddr, uint8_t *data)
         return false;
     }
 
-    return nfc_.mifareclassic_ReadDataBlock(blockAddr, data) == 1;
+    SPI.beginTransaction(NFC_SPI_SETTINGS);
+    const bool ok = nfc_.mifareclassic_ReadDataBlock(blockAddr, data) == 1;
+    SPI.endTransaction();
+    return ok;
 }
 
 bool NFCReader::writeBlock(uint8_t blockAddr, const uint8_t *data)
@@ -152,8 +193,11 @@ bool NFCReader::writeBlock(uint8_t blockAddr, const uint8_t *data)
         return false;
     }
 
-    return nfc_.mifareclassic_WriteDataBlock(blockAddr,
+    SPI.beginTransaction(NFC_SPI_SETTINGS);
+    const bool ok = nfc_.mifareclassic_WriteDataBlock(blockAddr,
                                              const_cast<uint8_t *>(data)) == 1;
+    SPI.endTransaction();
+    return ok;
 }
 
 bool NFCReader::writeMagicUid(const uint8_t *newUid, uint8_t uidLen)
@@ -300,11 +344,9 @@ bool NFCReader::emulateNtag213Url(const char *url, uint8_t prefixCode,
     };
 
     // Set PN532 as target (passive only, 106 kbps)
-    const uint8_t activated = nfc_.tgInitAsTarget(
-        atr, sizeof(atr),
-        felicaParams, sizeof(felicaParams),
-        nfcid3, sizeof(nfcid3),
-        timeoutMs);
+    SPI.beginTransaction(NFC_SPI_SETTINGS);
+    const uint8_t activated = nfc_.AsTarget();
+    SPI.endTransaction();
 
     if (activated == 0U)
     {
@@ -322,7 +364,10 @@ bool NFCReader::emulateNtag213Url(const char *url, uint8_t prefixCode,
     for (uint8_t attempts = 0U; attempts < 20U; ++attempts)
     {
         cmdLen = sizeof(cmd);
-        if (nfc_.tgGetData(cmd, &cmdLen) != 1)
+        SPI.beginTransaction(NFC_SPI_SETTINGS);
+        const bool gotData = nfc_.getDataTarget(cmd, &cmdLen) == 1;
+        SPI.endTransaction();
+        if (!gotData)
         {
             break;
         }
@@ -374,7 +419,10 @@ bool NFCReader::emulateNtag213Url(const char *url, uint8_t prefixCode,
                 }
             }
 
-            if (nfc_.tgSetData(resp, 16U) == 1)
+            SPI.beginTransaction(NFC_SPI_SETTINGS);
+            const bool sent = sendTargetResponse(nfc_, resp, 16U);
+            SPI.endTransaction();
+            if (sent)
             {
                 success = true;
             }
@@ -383,7 +431,9 @@ bool NFCReader::emulateNtag213Url(const char *url, uint8_t prefixCode,
         {
             // Unknown command – respond with empty ACK
             uint8_t ack = 0x0AU;
-            nfc_.tgSetData(&ack, 1U);
+            SPI.beginTransaction(NFC_SPI_SETTINGS);
+            sendTargetResponse(nfc_, &ack, 1U);
+            SPI.endTransaction();
         }
     }
 
@@ -419,11 +469,16 @@ bool NFCReader::emulateNtag215(const uint8_t *dump, uint16_t timeoutMs)
         0xA5U, 0xA6U, 0xA7U, 0xC0U, 0xC1U,
     };
 
-    const uint8_t activated = nfc_.tgInitAsTarget(
-        atr, sizeof(atr),
-        felicaParams, sizeof(felicaParams),
-        nfcid3, sizeof(nfcid3),
-        timeoutMs);
+    // Suppress unused variable warnings – params are kept for reference
+    // but AsTarget() uses its own hardcoded configuration
+    (void)atr;
+    (void)felicaParams;
+    (void)nfcid3;
+    (void)timeoutMs;
+
+    SPI.beginTransaction(NFC_SPI_SETTINGS);
+    const uint8_t activated = nfc_.AsTarget();
+    SPI.endTransaction();
 
     if (activated == 0U)
     {
@@ -440,7 +495,10 @@ bool NFCReader::emulateNtag215(const uint8_t *dump, uint16_t timeoutMs)
     for (uint8_t attempts = 0U; attempts < 50U; ++attempts)
     {
         cmdLen = sizeof(cmd);
-        if (nfc_.tgGetData(cmd, &cmdLen) != 1)
+        SPI.beginTransaction(NFC_SPI_SETTINGS);
+        const bool gotData = nfc_.getDataTarget(cmd, &cmdLen) == 1;
+        SPI.endTransaction();
+        if (!gotData)
         {
             break;
         }
@@ -465,7 +523,10 @@ bool NFCReader::emulateNtag215(const uint8_t *dump, uint16_t timeoutMs)
                 }
             }
 
-            if (nfc_.tgSetData(resp, 16U) == 1)
+            SPI.beginTransaction(NFC_SPI_SETTINGS);
+            const bool sent = sendTargetResponse(nfc_, resp, 16U);
+            SPI.endTransaction();
+            if (sent)
             {
                 success = true;
             }
@@ -473,19 +534,23 @@ bool NFCReader::emulateNtag215(const uint8_t *dump, uint16_t timeoutMs)
         else if (cmd[0] == 0x60U && cmdLen >= 2U)
         {
             // GET_VERSION command → respond with NTAG215 version info
-            const uint8_t version[] = {
+            uint8_t version[] = {
                 0x00U, 0x04U, 0x04U, 0x02U,
                 0x01U, 0x00U, 0x11U, 0x03U,
             };
-            nfc_.tgSetData(const_cast<uint8_t *>(version), sizeof(version));
+            SPI.beginTransaction(NFC_SPI_SETTINGS);
+            sendTargetResponse(nfc_, version, sizeof(version));
+            SPI.endTransaction();
         }
         else if (cmd[0] == 0x1BU && cmdLen >= 5U)
         {
             // PWD_AUTH command: 0x1B <pw0> <pw1> <pw2> <pw3>
             // Respond with PACK (2 bytes) from pages 133-134 area
             // For Amiibo, respond with 0x80 0x80 (standard PACK)
-            const uint8_t pack[] = {0x80U, 0x80U};
-            nfc_.tgSetData(const_cast<uint8_t *>(pack), sizeof(pack));
+            uint8_t pack[] = {0x80U, 0x80U};
+            SPI.beginTransaction(NFC_SPI_SETTINGS);
+            sendTargetResponse(nfc_, pack, sizeof(pack));
+            SPI.endTransaction();
             success = true;
         }
         else if (cmd[0] == 0x3AU && cmdLen >= 3U)
@@ -502,20 +567,26 @@ bool NFCReader::emulateNtag215(const uint8_t *dump, uint16_t timeoutMs)
                 uint8_t resp[56] = {};
                 std::memcpy(resp, dump + (static_cast<size_t>(startPage) * 4U),
                             static_cast<size_t>(pages) * 4U);
-                nfc_.tgSetData(resp, pages * 4U);
+                SPI.beginTransaction(NFC_SPI_SETTINGS);
+                sendTargetResponse(nfc_, resp, pages * 4U);
+                SPI.endTransaction();
                 success = true;
             }
             else
             {
                 uint8_t nack = 0x00U;
-                nfc_.tgSetData(&nack, 1U);
+                SPI.beginTransaction(NFC_SPI_SETTINGS);
+                sendTargetResponse(nfc_, &nack, 1U);
+                SPI.endTransaction();
             }
         }
         else
         {
             // Unknown command – respond with ACK
             uint8_t ack = 0x0AU;
-            nfc_.tgSetData(&ack, 1U);
+            SPI.beginTransaction(NFC_SPI_SETTINGS);
+            sendTargetResponse(nfc_, &ack, 1U);
+            SPI.endTransaction();
         }
     }
 
@@ -550,7 +621,11 @@ bool NFCReader::writeNtag215(const uint8_t *dump)
         uint8_t pageData[4];
         std::memcpy(pageData, dump + offset, 4U);
 
-        if (nfc_.ntag2xx_WritePage(page, pageData) != 1)
+        SPI.beginTransaction(NFC_SPI_SETTINGS);
+        const bool writeOk = nfc_.ntag2xx_WritePage(page, pageData) == 1;
+        SPI.endTransaction();
+
+        if (!writeOk)
         {
             ESP_LOGE(TAG_NFC, "writeNtag215: write page %u failed",
                      static_cast<unsigned>(page));

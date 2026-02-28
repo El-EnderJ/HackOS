@@ -21,7 +21,7 @@ public:
     void deinit();
 
     /// Returns true when a new OOK packet is available.
-    bool available() const;
+    bool available();
     /// Read the received code and bit-length; clears the available flag.
     bool read(unsigned long &code, unsigned int &bitLength, unsigned int &delay);
 

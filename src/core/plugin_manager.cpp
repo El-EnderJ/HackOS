@@ -13,6 +13,7 @@
 #include <new>
 
 #include <esp_log.h>
+#include <esp_heap_caps.h>
 #include <Arduino.h>
 
 #include "apps/app_base.h"
@@ -244,6 +245,9 @@ PluginManager::PluginManager()
 
 size_t PluginManager::scanAndLoad()
 {
+    const size_t heapBefore = heap_caps_get_free_size(MALLOC_CAP_8BIT);
+    ESP_LOGI(TAG_PM, "scanAndLoad: heap before = %u bytes", static_cast<unsigned>(heapBefore));
+
     auto &vfs = storage::VirtualFS::instance();
 
     if (!vfs.sdMounted())
@@ -305,6 +309,12 @@ size_t PluginManager::scanAndLoad()
     }
 
     ESP_LOGI(TAG_PM, "Scan complete: %u plugins loaded", static_cast<unsigned>(loaded));
+
+    const size_t heapAfter = heap_caps_get_free_size(MALLOC_CAP_8BIT);
+    ESP_LOGI(TAG_PM, "scanAndLoad: heap after = %u bytes (delta = %d)",
+             static_cast<unsigned>(heapAfter),
+             static_cast<int>(heapAfter) - static_cast<int>(heapBefore));
+
     return loaded;
 }
 
@@ -343,11 +353,20 @@ size_t PluginManager::registerAll()
 
 size_t PluginManager::reload()
 {
+    const size_t heapBefore = heap_caps_get_free_size(MALLOC_CAP_8BIT);
+    ESP_LOGI(TAG_PM, "reload: heap before = %u bytes", static_cast<unsigned>(heapBefore));
+
     size_t newPlugins = scanAndLoad();
     if (newPlugins > 0U)
     {
         registerAll();
     }
+
+    const size_t heapAfter = heap_caps_get_free_size(MALLOC_CAP_8BIT);
+    ESP_LOGI(TAG_PM, "reload: heap after = %u bytes (delta = %d)",
+             static_cast<unsigned>(heapAfter),
+             static_cast<int>(heapAfter) - static_cast<int>(heapBefore));
+
     return newPlugins;
 }
 
@@ -405,6 +424,8 @@ bool PluginManager::deletePlugin(const char *name)
         return false;
     }
 
+    const size_t heapBefore = heap_caps_get_free_size(MALLOC_CAP_8BIT);
+
     for (size_t i = 0U; i < pluginCount_; ++i)
     {
         if (strcmp(plugins_[i].name, name) == 0)
@@ -415,13 +436,24 @@ bool PluginManager::deletePlugin(const char *name)
             auto &vfs = storage::VirtualFS::instance();
             if (vfs.remove(path))
             {
+                // Clear the plugin slot to release any associated data
+                g_pluginSlots[i] = nullptr;
+
                 // Shift remaining plugins
                 for (size_t j = i; j + 1U < pluginCount_; ++j)
                 {
                     plugins_[j] = plugins_[j + 1U];
+                    g_pluginSlots[j] = &plugins_[j];
                 }
                 --pluginCount_;
-                ESP_LOGI(TAG_PM, "Deleted plugin: %s", name);
+                // Clear the now-unused last slot
+                g_pluginSlots[pluginCount_] = nullptr;
+                std::memset(&plugins_[pluginCount_], 0, sizeof(PluginInfo));
+
+                const size_t heapAfter = heap_caps_get_free_size(MALLOC_CAP_8BIT);
+                ESP_LOGI(TAG_PM, "Deleted plugin: %s (heap delta = %d)",
+                         name,
+                         static_cast<int>(heapAfter) - static_cast<int>(heapBefore));
                 return true;
             }
             return false;
