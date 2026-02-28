@@ -3,6 +3,12 @@
  * @brief BadBT App – Bluetooth HID keyboard injector for authorised
  *        penetration testing.
  *
+ * @note The BLE HID profile uses "Just Works" pairing (ESP_IO_CAP_NONE)
+ *       intentionally so the keyboard pairs without user PIN entry.  The
+ *       PnP ID uses Apple's vendor code to mimic a legitimate peripheral.
+ *       Both are standard techniques in authorized red-team engagements.
+ *       Users MUST obtain explicit written authorization before use.
+ *
  * Implements:
  *  - **BLE HID Keyboard Profile**: Configures the ESP32 as a Bluetooth
  *    Low-Energy HID keyboard using the GATTS API.  The device advertises
@@ -34,6 +40,7 @@
 #include "apps/badbt_app.h"
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <new>
 
@@ -1270,8 +1277,9 @@ private:
             uint32_t delayMs = DEFAULT_DELAY_MS;
             if (dl.arg[0] != '\0')
             {
-                const long v = std::atol(dl.arg);
-                if (v > 0)
+                char *endPtr = nullptr;
+                const long v = std::strtol(dl.arg, &endPtr, 10);
+                if (endPtr != dl.arg && v > 0)
                 {
                     delayMs = static_cast<uint32_t>(v);
                 }
@@ -1708,9 +1716,9 @@ static void gattsEventHandler(esp_gatts_cb_event_t event,
         {
             g_badBtInstance->setConnected(true, param->connect.conn_id);
         }
-        // Request security / bonding
+        // Request encryption without MITM (matches ESP_IO_CAP_NONE "Just Works")
         esp_ble_set_encryption(param->connect.remote_bda,
-                               ESP_BLE_SEC_ENCRYPT_MITM);
+                               ESP_BLE_SEC_ENCRYPT_NO_MITM);
         ESP_LOGI(TAG_BBT, "Client connected (conn_id=%u)",
                  static_cast<unsigned>(param->connect.conn_id));
         break;
