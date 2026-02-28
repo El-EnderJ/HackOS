@@ -108,7 +108,6 @@ public:
         : buzzerOn_(false),
           peakCol_(0),
           peakVal_(0),
-          lastSampleMs_(0U),
           xpAwarded_(false),
           xpCooldownMs_(0U)
     {
@@ -142,6 +141,8 @@ public:
                 peakC = static_cast<uint8_t>(i);
             }
 
+            // Brief inter-sample delay for consistent sampling rate.
+            // ~1.3ms total per row is acceptable within the 33ms frame budget.
             delayMicroseconds(SAMPLE_INTERVAL_US);
         }
 
@@ -256,7 +257,6 @@ private:
     bool buzzerOn_;
     uint8_t peakCol_;
     uint16_t peakVal_;
-    uint32_t lastSampleMs_;
     bool xpAwarded_;
     uint32_t xpCooldownMs_;
 
@@ -335,7 +335,7 @@ private:
                     lit = false;
                     break;
                 case 1U:
-                    // Sparse dither: every 4th pixel
+                    // Diagonal sparse dither: ~25% fill
                     lit = ((r + c) % 4 == 0);
                     break;
                 case 2U:
@@ -408,9 +408,9 @@ public:
             sceneManager_->navigateTo(SCENE_WATERFALL);
         }
 
-        // Initialise ADC for the RF pin
+        // Initialise ADC for the RF pin (pin-specific attenuation)
         analogReadResolution(12);
-        analogSetAttenuation(ADC_11db);
+        analogSetPinAttenuation(PIN_RF_RX, ADC_11db);
         pinMode(PIN_RF_RX, INPUT);
 
         // Initialise LEDC for the buzzer (sound-to-light)
@@ -492,8 +492,9 @@ public:
             return;
         }
 
-        // DMA-optimised path: write directly to the display buffer
-        // when possible, otherwise fall through to canvas rendering.
+        // Render through Canvas then bulk-copy to display front buffer.
+        // This avoids per-pixel calls through the Adafruit_SSD1306 API
+        // and pushes the whole frame in a single memcpy (DMA-style burst).
         DisplayManager &disp = DisplayManager::instance();
         disp.clear();
         statusBar_.draw();
@@ -502,7 +503,7 @@ public:
         canvas.clear();
         viewDispatcher_.draw(&canvas);
 
-        // Copy canvas buffer to display via direct buffer access (DMA-style)
+        // Bulk-copy canvas buffer to display front buffer
         uint8_t *fb = disp.getDisplayBuffer();
         if (fb != nullptr)
         {
