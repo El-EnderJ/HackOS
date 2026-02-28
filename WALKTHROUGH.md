@@ -11,18 +11,19 @@
 HackOS is a cooperative, event-driven micro-OS designed to run on a bare ESP32 and expose a hacker-friendly multi-tool interface through a 128×64 OLED display and a 5-way joystick. It is architecturally split into four independent layers:
 
 ```
-┌────────────────────────────────────────────────────┐
-│                  Applications                      │
-│  Launcher · WiFi · NFC · IR · RF · FileManager · Amiibo │
-├────────────────────────────────────────────────────┤
-│                  Core OS                           │
-│        AppManager · EventSystem · StateMachine     │
-├────────────────────────────────────────────────────┤
-│            Hardware Abstraction Layer              │
-│  Display · Input · Wireless · NFC · IR · RF · SD  │
-├────────────────────────────────────────────────────┤
-│               ESP-IDF / FreeRTOS                   │
-└────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│                      Applications                        │
+│  Launcher · WiFi · NFC · IR · RF · FileManager · Amiibo  │
+│  BLE Audit · BadBT · GhostNet                            │
+├──────────────────────────────────────────────────────────┤
+│                      Core OS                             │
+│  AppManager · EventSystem · StateMachine · GhostNetMgr   │
+├──────────────────────────────────────────────────────────┤
+│                Hardware Abstraction Layer                 │
+│  Display · Input · Wireless · NFC · IR · RF · SD · ESPNOW│
+├──────────────────────────────────────────────────────────┤
+│                   ESP-IDF / FreeRTOS                      │
+└──────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -41,11 +42,13 @@ HackOS/
 │   │   ├── ir_tools_app.h       Factory: createIRToolsApp()
 │   │   ├── rf_tools_app.h       Factory: createRFToolsApp()
 │   │   ├── amiibo_app.h        Factory: createAmiiboApp()
+│   │   ├── ghostnet_app.h     Factory: createGhostNetApp()
 │   │   └── file_manager_app.h   Factory: createFileManagerApp()
 │   ├── core/
 │   │   ├── event.h              Event struct · EventType enum · event codes
 │   │   ├── event_system.h       EventSystem singleton · IEventObserver
 │   │   ├── app_manager.h        AppManager singleton
+│   │   ├── ghostnet_manager.h   GhostNetManager (ESP-NOW mesh)
 │   │   └── state_machine.h      GlobalState enum · StateMachine singleton
 │   ├── hardware/
 │   │   ├── display.h            DisplayManager (SSD1306 I²C)
@@ -133,6 +136,8 @@ Expected free RAM at the Launcher: **> 150 KB**.
 | `EVT_SYSTEM` | `SYSTEM_EVENT_BACK = 1` | — | Navigate back |
 | `EVT_APP` | `APP_EVENT_LAUNCH = 1` | app index | Launch app at index |
 | `EVT_WIFI_SCAN_DONE` | AP count | — | Async scan complete |
+| `EVT_XP_EARNED` | XP amount | — | Award XP to ExperienceManager |
+| `EVT_GHOSTNET` | `GhostMsgType` | payload len / peer count | GhostNet mesh event |
 
 **Observer limit**: 8 simultaneous observers (`MAX_OBSERVERS`).
 
@@ -422,6 +427,42 @@ GENERATE_KEYS──(PRESS/LEFT)──► MAIN_MENU
 **Heap allocation**: Single `heap_caps_malloc(540, MALLOC_CAP_8BIT)` – freed in `onDestroy()`.
 **NFC commands handled**: READ (0x30), FAST_READ (0x3A), PWD_AUTH (0x1B), GET_VERSION (0x60).
 
+### 7.8 GhostNetApp (Phase 16)
+
+```
+MAIN_MENU    ──(Radar)──► RADAR
+             ──(Chat)──► CHAT_VIEW
+             ──(Remote Exec)──► REMOTE_EXEC
+             ──(Sync Data)──► SYNC_VIEW
+             ──(Back)──► SYSTEM_EVENT_BACK
+RADAR        ──(PRESS/LEFT)──► MAIN_MENU
+CHAT_VIEW    ──(UP/DOWN)──► scroll messages
+             ──(RIGHT)──► cycle quick-send message
+             ──(PRESS)──► send quick message
+             ──(LEFT)──► MAIN_MENU
+REMOTE_EXEC  ──(UP/DOWN)──► navigate command menu
+             ──(PRESS BLE Spam)──► send CMD_BLE_SPAM to all peers
+             ──(PRESS Deauth)──► send CMD_WIFI_DEAUTH to all peers
+             ──(PRESS Stop)──► send CMD_STOP to all peers
+             ──(LEFT/Back)──► MAIN_MENU
+SYNC_VIEW    ──(PRESS)──► broadcast sync ping to peers
+             ──(LEFT)──► MAIN_MENU
+```
+
+**ESP-NOW**: Zero-configuration mesh – devices auto-discover via periodic beacons.
+**Encryption**: PMK/LMK key pair shared across all HackOS devices.
+**Max peers**: 8 simultaneous, pruned after 30 s timeout.
+**Packet format**: 2-byte magic `{'G','N'}` + type + seqNo + srcMAC + srcName + payload (≤220 bytes).
+
+### 7.9 GhostNetManager (Core)
+
+Singleton managing the ESP-NOW mesh layer:
+- **Auto-discovery**: Broadcast beacons every 5 s; peers reply with ACK.
+- **Peer table**: Up to 8 peers tracked with MAC, RSSI, name, and last-seen timestamp.
+- **Chat**: Ring buffer of 16 messages; text sent/received to/from all peers.
+- **Data sync**: Arbitrary payload broadcast with type tag (WiFi handshake, NFC UID, etc.).
+- **Remote execution**: Master issues `GhostCmd` (BLE_SPAM, WIFI_DEAUTH, STOP); Nodes acknowledge.
+
 ---
 
 ## 8. SD Card Capture Files
@@ -445,6 +486,9 @@ Create the `/captures/` directory on the SD card before first use.
 | Free heap at Launcher | > 150 KB | Logged via `ESP.getFreeHeap()` at startup |
 | WiFi AP label heap | max 16 × 32 B = 512 B | Freed in `onDestroy()` |
 | Amiibo dump buffer | 540 B | `heap_caps_malloc` in `onSetup()`, freed in `onDestroy()` |
+| GhostNet peer table | 8 × ~32 B = 256 B | Static in GhostNetManager singleton |
+| GhostNet chat ring | 16 × ~84 B ≈ 1.3 KB | Static ring buffer |
+| ESP-NOW overhead | ~2 KB | ESP-IDF internal buffers |
 | EventSystem queue | 16 × sizeof(Event) ≈ 320 B | FreeRTOS static queue |
 | OLED frame buffer | 1 KB (SSD1306 128×64 / 8) | Inside Adafruit GFX |
 | Stack per FreeRTOS task | default Arduino task: 8 KB | No custom tasks created |
@@ -477,6 +521,9 @@ All files compile cleanly under `-Wall -Wextra`. Intentionally-ignored return va
 | SD `/captures/` must exist | The directory is not auto-created; format card with it pre-made |
 | Amiibo keys placeholder | `amiibo_keys.bin` is a zeroed placeholder; real keys must be obtained separately |
 | Amiibo emulation blocking | `emulateNtag215()` blocks the loop for up to 30 s waiting for a reader |
+| GhostNet shared keys | PMK/LMK are hardcoded; all HackOS devices share the same keys |
+| GhostNet RSSI | ESP-NOW recv callback does not expose RSSI; a placeholder value is used |
+| GhostNet max peers | Limited to 8 simultaneous peers by ESP-NOW peer table |
 
 ---
 

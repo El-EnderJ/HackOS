@@ -56,6 +56,7 @@ graph TD
         RA["RFToolsApp"]
         FA["FileManagerApp"]
         AA["AmiiboApp"]
+        GN["GhostNetApp"]
     end
 
     subgraph hal["Hardware Abstraction Layer"]
@@ -66,6 +67,7 @@ graph TD
         IR["IRTransceiver\n(IRremoteESP8266)"]
         RF["RFTransceiver\n(rc-switch 433 MHz)"]
         ST["StorageManager\n(SD SPI)"]
+        EN["GhostNetManager\n(ESP-NOW Mesh)"]
     end
 
     SETUP --> AM
@@ -329,6 +331,7 @@ That's it – the Launcher will automatically display `"my_app"` in its menu.
 | **RF Tools** | `rf_tools` | Receive/transmit 433 MHz OOK codes |
 | **File Manager** | `file_manager` | Browse SD card directories; shows name, size |
 | **Amiibo Master** | `amiibo` | Browse SD for NTAG215 .bin dumps, emulate Amiibos, write to blank tags |
+| **GhostNet** | `ghostnet` | ESP-NOW mesh radar, peer chat, data sync, remote execution |
 
 ### Capture file paths on SD
 
@@ -352,6 +355,7 @@ HackOS/
 │   │   ├── wifi_tools_app.h
 │   │   ├── nfc_tools_app.h
 │   │   ├── amiibo_app.h
+│   │   ├── ghostnet_app.h
 │   │   ├── ir_tools_app.h
 │   │   ├── rf_tools_app.h
 │   │   └── file_manager_app.h
@@ -359,6 +363,7 @@ HackOS/
 │   │   ├── event.h               ← Event struct + EventType enum
 │   │   ├── event_system.h        ← EventSystem singleton + IEventObserver
 │   │   ├── app_manager.h         ← AppManager singleton
+│   │   ├── ghostnet_manager.h   ← GhostNetManager (ESP-NOW mesh)
 │   │   └── state_machine.h       ← GlobalState machine
 │   ├── hardware/
 │   │   ├── display.h             ← DisplayManager (SSD1306)
