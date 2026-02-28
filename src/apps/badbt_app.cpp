@@ -1403,6 +1403,12 @@ private:
             return expandedBuf_;
         }
 
+        // Fast path: no variables to expand
+        if (std::strchr(input, '$') == nullptr)
+        {
+            return input;
+        }
+
         size_t outIdx = 0U;
         size_t inIdx  = 0U;
         const size_t inLen = std::strlen(input);
@@ -1778,8 +1784,23 @@ private:
                 repeatCount_ = count;
             }
 
+            // Guard: only repeat valid action commands, not control-flow
             if (repeatCount_ > 0U && execLineIdx_ > 0U)
             {
+                const DuckyCmd prevCmd = parsedLines_[execLineIdx_ - 1U].cmd;
+                if (prevCmd == DuckyCmd::CMD_REPEAT ||
+                    prevCmd == DuckyCmd::CMD_IF_CONNECTED ||
+                    prevCmd == DuckyCmd::CMD_END_IF ||
+                    prevCmd == DuckyCmd::CMD_VAR ||
+                    prevCmd == DuckyCmd::CMD_CHAIN ||
+                    prevCmd == DuckyCmd::CMD_WAIT_FOR_BUTTON)
+                {
+                    ESP_LOGW(TAG_BBT, "REPEAT: skipping – previous line is not repeatable");
+                    repeatCount_ = 0U;
+                    advanceLine();
+                    break;
+                }
+
                 --repeatCount_;
                 // Jump back to the previous line to re-execute it
                 execLineIdx_ -= 1U;
@@ -1847,6 +1868,12 @@ private:
             const char *fname = dl.arg;
             if (fname[0] != '\0')
             {
+                const size_t fnLen = std::strlen(fname);
+                if (fnLen < 5U ||
+                    std::strcmp(&fname[fnLen - 4U], ".txt") != 0)
+                {
+                    ESP_LOGW(TAG_BBT, "CHAIN: filename '%s' has no .txt extension", fname);
+                }
                 std::strncpy(chainScriptName_, fname, SCRIPT_NAME_LEN - 1U);
                 chainScriptName_[SCRIPT_NAME_LEN - 1U] = '\0';
                 hasChainScript_ = true;
