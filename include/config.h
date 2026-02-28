@@ -94,4 +94,4 @@ constexpr uint8_t PIN_HB_SCL = 14U;
 constexpr uint8_t PIN_HB_ADC = 36U;
 
 /// @brief PWM output pin for the Hardware Bridge signal generator.
-constexpr uint8_t PIN_HB_SIGGEN = 33U;
+constexpr uint8_t PIN_HB_SIGGEN = 2U;

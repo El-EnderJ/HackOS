@@ -63,9 +63,9 @@ static constexpr uint8_t PIN_HB_SDA     = 13U; ///< I2C data sniff
 static constexpr uint8_t PIN_HB_SCL     = 14U; ///< I2C clock sniff
 static constexpr uint8_t PIN_HB_SPI_CLK = 12U; ///< SPI clock sniff
 static constexpr uint8_t PIN_HB_SPI_MOSI = 2U; ///< SPI MOSI sniff
-static constexpr uint8_t PIN_HB_SPI_MISO = 0U; ///< SPI MISO sniff (input-only ok)
+static constexpr uint8_t PIN_HB_SPI_MISO = 39U; ///< SPI MISO sniff (VN, input-only)
 static constexpr uint8_t PIN_HB_ADC     = 36U; ///< ADC input (VP, input-only)
-static constexpr uint8_t PIN_HB_SIGGEN  = 33U; ///< PWM signal output
+static constexpr uint8_t PIN_HB_SIGGEN  = 2U;  ///< PWM signal output
 
 /// Sniffer ring buffer
 static constexpr size_t SNIFF_BUF_SIZE = 512U;
@@ -469,9 +469,9 @@ private:
         case SniffProto::SPI:
         {
             // Bit-bang SPI sniff: sample MOSI on rising CLK edge
-            static uint8_t spiByte  = 0U;
-            static uint8_t spiBit   = 0U;
-            static bool    lastClk  = false;
+            static volatile uint8_t spiByte  = 0U;
+            static volatile uint8_t spiBit   = 0U;
+            static volatile bool    lastClk  = false;
 
             bool clk = digitalRead(PIN_HB_SPI_CLK);
             if (clk && !lastClk) // rising edge
@@ -794,7 +794,7 @@ private:
             }
         }
 
-        d.drawText(0, DISPLAY_H - 8, "U/D:freq C:run L:bk");
+        d.drawText(0, DISPLAY_H - 8, "U/D:freq C:run L:back");
     }
 
     void handleSgInput(InputManager::InputEvent input)
