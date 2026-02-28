@@ -27,6 +27,7 @@ const char *const StorageInit::REQUIRED_DIRS[DIR_COUNT] = {
     "/ext/pwnmode",
     "/ext/pcap",
     "/ext/hwbridge",
+    "/ext/assets/subghz",
 };
 
 // ── Public API ───────────────────────────────────────────────────────────────
