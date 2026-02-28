@@ -21,8 +21,7 @@ public:
           dialog_(14, 16, 100, 30),
           hackBot_(80, 12, 46, 42),
           appNames_{},
-          appCount_(0U),
-          showBot_(false)
+          appCount_(0U)
     {
     }
 
@@ -112,7 +111,6 @@ private:
     HackBotWidget hackBot_;
     const char *appNames_[MAX_APPS];
     size_t appCount_;
-    bool showBot_;
 
     void updateHackBot()
     {

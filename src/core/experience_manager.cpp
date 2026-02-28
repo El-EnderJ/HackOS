@@ -88,7 +88,7 @@ void ExperienceManager::load()
         hp = static_cast<uint32_t>(std::strtoul(p + 5, nullptr, 10));
     }
 
-    level_      = (lvl >= 1U && lvl <= 999U) ? static_cast<uint16_t>(lvl) : 1U;
+    level_      = (lvl >= 1U && lvl <= MAX_LEVEL) ? static_cast<uint16_t>(lvl) : 1U;
     xp_         = xp;
     hackPoints_ = hp;
 

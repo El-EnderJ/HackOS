@@ -54,6 +54,9 @@ private:
     /// Path on internal flash for the stats JSON.
     static constexpr const char *STATS_PATH = "/int/xp_stats.json";
 
+    /// Maximum achievable level.
+    static constexpr uint16_t MAX_LEVEL = 999U;
+
     /// XP required for level N: 100 * N  (level 1→100, level 2→200, …)
     static constexpr uint32_t xpThreshold(uint16_t lvl) { return 100U * static_cast<uint32_t>(lvl); }
 
