@@ -57,6 +57,14 @@ static constexpr size_t MAX_DIR_ENTRIES  = 32U;
 static constexpr const char *AP_SSID     = "HackOS-Dashboard";
 static constexpr const char *AP_PASS     = "hackos1337";
 
+// ── RF SSE simulation parameters ─────────────────────────────────────────────
+static constexpr int SSE_RF_SAMPLE_COUNT     = 60;
+static constexpr int SSE_RF_RSSI_BASE        = -30;
+static constexpr int SSE_RF_RSSI_RANGE       = 60;
+static constexpr int SSE_RF_BASE_FREQ_MHZ    = 433;
+static constexpr int SSE_RF_FREQ_RANGE_MHZ   = 35;
+static constexpr uint32_t SSE_UPDATE_INTERVAL_MS = 500U;
+
 // ── Menu ──────────────────────────────────────────────────────────────────────
 
 static constexpr size_t MAIN_MENU_COUNT = 3U;
@@ -968,10 +976,10 @@ static esp_err_t httpApiRfLiveHandler(httpd_req_t *req)
 
     // Send simulated RF data points (real implementation would read
     // from the RF transceiver ring buffer)
-    for (int i = 0; i < 60; ++i)
+    for (int i = 0; i < SSE_RF_SAMPLE_COUNT; ++i)
     {
-        int rssi = -30 - (esp_random() % 60);
-        int freq  = 433 + static_cast<int>(esp_random() % 35);
+        int rssi = SSE_RF_RSSI_BASE - static_cast<int>(esp_random() % SSE_RF_RSSI_RANGE);
+        int freq  = SSE_RF_BASE_FREQ_MHZ + static_cast<int>(esp_random() % SSE_RF_FREQ_RANGE_MHZ);
         const char *proto = (esp_random() % 2 == 0) ? "OOK" : "FSK";
 
         char sseData[128];
@@ -984,7 +992,7 @@ static esp_err_t httpApiRfLiveHandler(httpd_req_t *req)
             break;
         }
 
-        vTaskDelay(pdMS_TO_TICKS(500));
+        vTaskDelay(pdMS_TO_TICKS(SSE_UPDATE_INTERVAL_MS));
     }
 
     // End SSE stream
