@@ -378,7 +378,6 @@ public:
           decodedBits_(0U),
           lastDecodeMs_(0U)
     {
-        statusMsg_[0] = '\0';
     }
 
     /// Copy ISR buffer and attempt protocol decoding.
@@ -485,7 +484,6 @@ private:
     uint32_t decodedCode_;
     uint8_t  decodedBits_;
     uint32_t lastDecodeMs_;
-    char     statusMsg_[32];
 
     /**
      * @brief Attempt to decode a pulse train using a specific protocol.
@@ -949,7 +947,7 @@ public:
     void setActiveScene(SceneId s) { activeScene_ = s; }
 
 private:
-    SLMenuView      *menuView_;
+    SLMenuView       *menuView_;
     SLWaterfallView  *waterfallView_;
     SLDecoderView    *decoderView_;
     SLPulseView      *pulseView_;
