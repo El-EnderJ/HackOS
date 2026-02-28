@@ -1,0 +1,5 @@
+REM Hello World – Basic test payload
+REM Works on all targets
+DELAY 1000
+STRING Hello from HackOS BadBT!
+ENTER

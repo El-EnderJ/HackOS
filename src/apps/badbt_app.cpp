@@ -29,6 +29,7 @@
  *      • VAR <name> <value> – define a script variable
  *      • STRING $VAR_NAME   – variable injection in text
  *      • CHAIN <script.txt> – queue the next payload for execution
+ *      • TARGET WINDOWS|MAC|ANDROID – set the target OS
  *
  *  - **Variable Injection**: Scripts may reference built-in variables
  *    ($DEVICE_NAME, $LAST_NFC_UID, $WIFI_SSID) or user-defined
@@ -36,6 +37,12 @@
  *
  *  - **Multi-Payload Chaining**: The CHAIN command queues a follow-up
  *    script that starts automatically after the current one finishes.
+ *
+ *  - **Multi-Target OS**: Scripts and the menu allow selecting a target
+ *    OS (Windows, Mac, Android).  On Mac targets, CTRL-based shortcuts
+ *    are automatically mapped to GUI (Command) so the same payload
+ *    works across platforms.  The $TARGET variable lets scripts check
+ *    the current target at runtime.
  *
  *  - **Payload Manager**: Lists scripts in `/ext/badbt/`, lets the user
  *    select one, pairs with a nearby device, and "types" the payload.
@@ -246,18 +253,36 @@ enum class BadBtState : uint8_t
     MENU_MAIN,
     SCRIPT_SELECT,
     DEVICE_NAME_SELECT,
+    TARGET_SELECT,
     WAITING_PAIR,
     EXECUTING,
     STEALTH,
     DONE,
 };
 
+// ── Target OS selection ──────────────────────────────────────────────────────
+
+enum class TargetOS : uint8_t
+{
+    WINDOWS = 0U,
+    MAC     = 1U,
+    ANDROID = 2U,
+};
+
+static constexpr size_t TARGET_OS_COUNT = 3U;
+static const char *const TARGET_OS_NAMES[TARGET_OS_COUNT] = {
+    "Windows",
+    "Mac",
+    "Android",
+};
+
 // ── Main menu labels ─────────────────────────────────────────────────────────
 
-static constexpr size_t MAIN_MENU_COUNT = 4U;
+static constexpr size_t MAIN_MENU_COUNT = 5U;
 static const char *const MAIN_MENU_LABELS[MAIN_MENU_COUNT] = {
     "Select Script",
     "Device Name",
+    "Target OS",
     "Execute",
     "Back",
 };
@@ -296,6 +321,7 @@ enum class DuckyCmd : uint8_t
     CMD_END_IF,           ///< END_IF – close conditional block
     CMD_VAR,              ///< VAR name value – define a user variable
     CMD_CHAIN,            ///< CHAIN script.txt – queue next payload
+    CMD_TARGET,           ///< TARGET WINDOWS|MAC|ANDROID – set target OS
 };
 
 // ── Parsed DuckyScript line ──────────────────────────────────────────────────
@@ -444,6 +470,7 @@ static DuckyCmd parseCommand(const char *token)
     if (std::strcmp(token, "END_IF") == 0)           return DuckyCmd::CMD_END_IF;
     if (std::strcmp(token, "VAR") == 0)              return DuckyCmd::CMD_VAR;
     if (std::strcmp(token, "CHAIN") == 0)            return DuckyCmd::CMD_CHAIN;
+    if (std::strcmp(token, "TARGET") == 0)           return DuckyCmd::CMD_TARGET;
     return DuckyCmd::CMD_NONE;
 }
 
@@ -504,6 +531,7 @@ public:
           mainMenu_(0, 20, 128, 36, 3),
           scriptMenu_(0, 20, 128, 36, 3),
           nameMenu_(0, 20, 128, 36, 3),
+          targetMenu_(0, 20, 128, 36, 3),
           state_(BadBtState::MENU_MAIN),
           needsRedraw_(true),
           bleInitialized_(false),
@@ -511,6 +539,7 @@ public:
           scriptCount_(0U),
           selectedScript_(0U),
           selectedNameIdx_(0U),
+          selectedTargetIdx_(0U),
           scriptLoaded_(false),
           execLineIdx_(0U),
           execCharIdx_(0U),
@@ -555,6 +584,7 @@ protected:
         statusBar_.setTime(0U, 0U);
         mainMenu_.setItems(MAIN_MENU_LABELS, MAIN_MENU_COUNT);
         nameMenu_.setItems(DEVICE_NAMES, DEVICE_NAME_COUNT);
+        targetMenu_.setItems(TARGET_OS_NAMES, TARGET_OS_COUNT);
 
         g_badBtInstance = this;
         state_ = BadBtState::MENU_MAIN;
@@ -637,6 +667,10 @@ protected:
             drawTitle("Device Name");
             nameMenu_.draw();
             break;
+        case BadBtState::TARGET_SELECT:
+            drawTitle("Target OS");
+            targetMenu_.draw();
+            break;
         case BadBtState::WAITING_PAIR:
             drawWaitingPair();
             break;
@@ -670,6 +704,7 @@ private:
     MenuListView mainMenu_;
     MenuListView scriptMenu_;
     MenuListView nameMenu_;
+    MenuListView targetMenu_;
 
     BadBtState state_;
     bool       needsRedraw_;
@@ -688,6 +723,9 @@ private:
 
     // Device name selection
     size_t selectedNameIdx_;
+
+    // Target OS selection
+    size_t selectedTargetIdx_;
 
     // Script execution state
     uint8_t  scriptBuf_[SCRIPT_BUF_SIZE];
@@ -730,7 +768,8 @@ private:
     bool anyWidgetDirty() const
     {
         return statusBar_.isDirty() || mainMenu_.isDirty() ||
-               scriptMenu_.isDirty() || nameMenu_.isDirty();
+               scriptMenu_.isDirty() || nameMenu_.isDirty() ||
+               targetMenu_.isDirty();
     }
 
     void clearAllDirty()
@@ -739,6 +778,7 @@ private:
         mainMenu_.clearDirty();
         scriptMenu_.clearDirty();
         nameMenu_.clearDirty();
+        targetMenu_.clearDirty();
     }
 
     void transitionTo(BadBtState next)
@@ -809,6 +849,9 @@ private:
         case BadBtState::DEVICE_NAME_SELECT:
             handleNameInput(input);
             break;
+        case BadBtState::TARGET_SELECT:
+            handleTargetInput(input);
+            break;
         case BadBtState::WAITING_PAIR:
             if (input == InputManager::InputEvent::BUTTON_PRESS)
             {
@@ -864,10 +907,13 @@ private:
             case 1U: // Device Name
                 transitionTo(BadBtState::DEVICE_NAME_SELECT);
                 break;
-            case 2U: // Execute
+            case 2U: // Target OS
+                transitionTo(BadBtState::TARGET_SELECT);
+                break;
+            case 3U: // Execute
                 startExecution();
                 break;
-            case 3U: // Back
+            case 4U: // Back
             {
                 const Event evt{EventType::EVT_SYSTEM, SYSTEM_EVENT_BACK,
                                 0, nullptr};
@@ -916,6 +962,28 @@ private:
         {
             selectedNameIdx_ = nameMenu_.selectedIndex();
             ESP_LOGI(TAG_BBT, "Device name set: %s", DEVICE_NAMES[selectedNameIdx_]);
+            transitionTo(BadBtState::MENU_MAIN);
+        }
+        else if (input == InputManager::InputEvent::LEFT)
+        {
+            transitionTo(BadBtState::MENU_MAIN);
+        }
+    }
+
+    void handleTargetInput(InputManager::InputEvent input)
+    {
+        if (input == InputManager::InputEvent::UP)
+        {
+            targetMenu_.moveSelection(-1);
+        }
+        else if (input == InputManager::InputEvent::DOWN)
+        {
+            targetMenu_.moveSelection(1);
+        }
+        else if (input == InputManager::InputEvent::BUTTON_PRESS)
+        {
+            selectedTargetIdx_ = targetMenu_.selectedIndex();
+            ESP_LOGI(TAG_BBT, "Target OS set: %s", TARGET_OS_NAMES[selectedTargetIdx_]);
             transitionTo(BadBtState::MENU_MAIN);
         }
         else if (input == InputManager::InputEvent::LEFT)
@@ -1336,6 +1404,10 @@ private:
         {
             return DEVICE_NAMES[selectedNameIdx_];
         }
+        if (std::strcmp(name, "TARGET") == 0)
+        {
+            return TARGET_OS_NAMES[selectedTargetIdx_];
+        }
         if (std::strcmp(name, "LAST_NFC_UID") == 0)
         {
             // Placeholder – populated from NFC subsystem captures
@@ -1621,7 +1693,10 @@ private:
         case DuckyCmd::CMD_CTRL:
         {
             const uint8_t key = singleKeyToHid(dl.arg);
-            sendKeyPress(MOD_LCTRL, key);
+            // On Mac targets, CTRL maps to Command (GUI) for standard shortcuts
+            const uint8_t mod = (static_cast<TargetOS>(selectedTargetIdx_) == TargetOS::MAC)
+                                    ? MOD_LGUI : MOD_LCTRL;
+            sendKeyPress(mod, key);
             lastKeySendMs_ = nowMs;
             advanceLine();
             break;
@@ -1648,7 +1723,10 @@ private:
         case DuckyCmd::CMD_CTRL_ALT:
         {
             const uint8_t key = singleKeyToHid(dl.arg);
-            sendKeyPress(MOD_LCTRL | MOD_LALT, key);
+            const uint8_t mod = (static_cast<TargetOS>(selectedTargetIdx_) == TargetOS::MAC)
+                                    ? static_cast<uint8_t>(MOD_LGUI | MOD_LALT)
+                                    : static_cast<uint8_t>(MOD_LCTRL | MOD_LALT);
+            sendKeyPress(mod, key);
             lastKeySendMs_ = nowMs;
             advanceLine();
             break;
@@ -1657,7 +1735,10 @@ private:
         case DuckyCmd::CMD_CTRL_SHIFT:
         {
             const uint8_t key = singleKeyToHid(dl.arg);
-            sendKeyPress(MOD_LCTRL | MOD_LSHIFT, key);
+            const uint8_t mod = (static_cast<TargetOS>(selectedTargetIdx_) == TargetOS::MAC)
+                                    ? static_cast<uint8_t>(MOD_LGUI | MOD_LSHIFT)
+                                    : static_cast<uint8_t>(MOD_LCTRL | MOD_LSHIFT);
+            sendKeyPress(mod, key);
             lastKeySendMs_ = nowMs;
             advanceLine();
             break;
@@ -1843,6 +1924,30 @@ private:
                 hasChainScript_ = true;
                 ESP_LOGI(TAG_BBT, "CHAIN queued: %s", chainScriptName_);
             }
+            advanceLine();
+            break;
+        }
+
+        case DuckyCmd::CMD_TARGET:
+        {
+            // Set the target OS from script: TARGET WINDOWS|MAC|ANDROID
+            if (std::strcmp(dl.arg, "WINDOWS") == 0)
+            {
+                selectedTargetIdx_ = static_cast<size_t>(TargetOS::WINDOWS);
+            }
+            else if (std::strcmp(dl.arg, "MAC") == 0)
+            {
+                selectedTargetIdx_ = static_cast<size_t>(TargetOS::MAC);
+            }
+            else if (std::strcmp(dl.arg, "ANDROID") == 0)
+            {
+                selectedTargetIdx_ = static_cast<size_t>(TargetOS::ANDROID);
+            }
+            else
+            {
+                ESP_LOGW(TAG_BBT, "TARGET: unknown OS '%s'", dl.arg);
+            }
+            ESP_LOGI(TAG_BBT, "Target OS set: %s", TARGET_OS_NAMES[selectedTargetIdx_]);
             advanceLine();
             break;
         }

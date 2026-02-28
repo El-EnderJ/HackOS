@@ -1,0 +1,6 @@
+REM Android – Type a URL in the browser
+REM Authorized penetration testing only
+TARGET ANDROID
+DELAY 500
+STRING https://example.com
+ENTER

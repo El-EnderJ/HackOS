@@ -1,0 +1,11 @@
+REM Windows – Open CMD and run whoami
+REM Authorized penetration testing only
+TARGET WINDOWS
+DELAY 500
+GUI r
+DELAY 700
+STRING cmd
+ENTER
+DELAY 1000
+STRING whoami
+ENTER
