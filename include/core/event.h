@@ -47,4 +47,5 @@ enum : int32_t
     XP_GHOSTNET_OP  = 20,
     XP_DASHBOARD_OP = 15,
     XP_SIGNAL_ANALYZE = 15,
+    XP_PLUGIN_LOAD    = 10,
 };

@@ -34,6 +34,7 @@
 #include "core/event_system.h"
 #include "core/app_manager.h"
 #include "core/experience_manager.h"
+#include "core/plugin_manager.h"
 #include "hardware/display.h"
 #include "hardware/input.h"
 #include "storage/vfs.h"
@@ -48,7 +49,7 @@ namespace
 
 static constexpr uint8_t AP_CHANNEL      = 1U;
 static constexpr uint8_t AP_MAX_CONN     = 4U;
-static constexpr size_t HTTPD_MAX_URI    = 16U;
+static constexpr size_t HTTPD_MAX_URI    = 20U;
 static constexpr size_t HTTPD_STACK_SIZE = 8192U;
 static constexpr size_t FILE_BUF_SIZE    = 2048U;
 static constexpr size_t JSON_BUF_SIZE    = 2048U;
@@ -115,6 +116,17 @@ input[type=text]{background:#111;color:#00ff41;border:1px solid #333;padding:6px
 .log{background:#111;color:#0f0;padding:8px;font-size:12px;max-height:150px;overflow-y:auto;border:1px solid #333;border-radius:3px;margin-top:8px;white-space:pre-wrap}
 #path-bar{display:flex;align-items:center;gap:8px;margin-bottom:8px}
 #path-bar span{font-size:13px;color:#0a0}
+.plugin-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+.plugin-card{background:#111;border:1px solid #1a1a1a;border-radius:6px;padding:14px;transition:border-color .2s}
+.plugin-card:hover{border-color:#00ff41}
+.plugin-card h4{color:#00ff41;margin-bottom:4px;font-size:14px}
+.plugin-card .meta{color:#0a0;font-size:11px;margin-bottom:6px}
+.plugin-card .desc{color:#888;font-size:12px;margin-bottom:8px}
+.plugin-card .actions{display:flex;gap:6px;flex-wrap:wrap}
+.badge{display:inline-block;background:#1a1a1a;color:#0a0;padding:2px 8px;border-radius:10px;font-size:10px;border:1px solid #333}
+.badge.on{background:#00ff4122;border-color:#00ff41;color:#00ff41}
+.upload-zone{border:2px dashed #333;border-radius:6px;padding:24px;text-align:center;color:#666;cursor:pointer;transition:border-color .2s}
+.upload-zone:hover,.upload-zone.dragover{border-color:#00ff41;color:#00ff41}
 </style>
 </head>
 <body>
@@ -128,6 +140,7 @@ input[type=text]{background:#111;color:#00ff41;border:1px solid #333;padding:6px
 <button onclick="showPanel('files')">Files</button>
 <button onclick="showPanel('ducky')">DuckyScript</button>
 <button onclick="showPanel('rf')">RF Monitor</button>
+<button onclick="showPanel('plugins')">Plugin Store</button>
 </div>
 
 <div id="status" class="panel active">
@@ -166,6 +179,29 @@ input[type=text]{background:#111;color:#00ff41;border:1px solid #333;padding:6px
 </div>
 </div>
 
+<div id="plugins" class="panel">
+<div class="card"><h3>&#128268; Plugin Store</h3>
+<p style="color:#888;font-size:12px;margin-bottom:12px">Manage installed plugins and upload new ones from JSON definitions.</p>
+<div class="plugin-grid" id="plugin-grid">Loading...</div>
+</div>
+<div class="card"><h3>Upload Plugin</h3>
+<div class="upload-zone" id="upload-zone" onclick="document.getElementById('plugin-file').click()">
+&#128228; Drop a .json plugin file here or click to browse
+</div>
+<input type="file" id="plugin-file" accept=".json" style="display:none" onchange="uploadPlugin(this)">
+<div class="log" id="plugin-log"></div>
+</div>
+<div class="card"><h3>Create New Plugin</h3>
+<input type="text" id="pname" placeholder="Plugin name (e.g. my_tool)">
+<input type="text" id="plabel" placeholder="Display label (e.g. My Tool)">
+<input type="text" id="pauthor" placeholder="Author">
+<input type="text" id="pdesc" placeholder="Description">
+<textarea id="peditor" style="height:120px" placeholder='{"actions": [{"type":"gpio_toggle","pin":25,"label":"Toggle LED"}]}'></textarea>
+<button class="btn" onclick="createPlugin()">Create Plugin</button>
+<div class="log" id="create-log"></div>
+</div>
+</div>
+
 <script>
 let curPath='/ext';
 function api(u,o){return fetch(u,o).then(r=>r.json()).catch(e=>({error:e.message}))}
@@ -178,6 +214,7 @@ if(id==='status')loadStatus();
 if(id==='apps')loadApps();
 if(id==='files')loadFiles();
 if(id==='rf')startRF();
+if(id==='plugins')loadPlugins();
 }
 function loadStatus(){
 api('/api/status').then(d=>{
@@ -262,6 +299,70 @@ ctx.stroke();
 };
 rfEvt.onerror=function(){lg.textContent+='\\nSSE disconnected';};
 }
+function loadPlugins(){
+api('/api/plugins').then(d=>{
+if(d.error||!d.plugins){document.getElementById('plugin-grid').innerHTML='<p>No plugins installed</p>';return;}
+let h='';
+d.plugins.forEach(p=>{
+h+='<div class="plugin-card"><h4>'+esc(p.label)+'</h4>';
+h+='<div class="meta">v'+esc(p.version)+' by '+esc(p.author)+' <span class="badge'+(p.enabled?' on':'')+'">'+(p.enabled?'Enabled':'Disabled')+'</span></div>';
+h+='<div class="desc">'+esc(p.description)+'</div>';
+h+='<div class="actions">';
+h+='<button class="btn" onclick="togglePlugin(\''+esc(p.name)+'\','+(!p.enabled)+')">'+(p.enabled?'Disable':'Enable')+'</button>';
+h+='<button class="btn btn-danger" onclick="deletePlugin(\''+esc(p.name)+'\')">Delete</button>';
+if(p.actions)h+='<span class="badge">'+p.actions+' actions</span>';
+h+='</div></div>';
+});
+document.getElementById('plugin-grid').innerHTML=h;
+});
+}
+function esc(s){let d=document.createElement('div');d.textContent=s;return d.innerHTML.replace(/'/g,'&#39;').replace(/"/g,'&quot;');}
+function togglePlugin(n,en){
+api('/api/plugins/toggle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:n,enabled:en})}).then(d=>{
+document.getElementById('plugin-log').textContent=d.ok?'Plugin '+(en?'enabled':'disabled'):'Error: '+(d.error||'unknown');
+loadPlugins();
+});
+}
+function deletePlugin(n){
+if(!confirm('Delete plugin "'+n+'"?'))return;
+api('/api/plugins/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:n})}).then(d=>{
+document.getElementById('plugin-log').textContent=d.ok?'Plugin deleted':'Error: '+(d.error||'unknown');
+loadPlugins();
+});
+}
+function uploadPlugin(input){
+if(!input.files||!input.files[0])return;
+let f=input.files[0];
+let reader=new FileReader();
+reader.onload=function(e){
+let content=e.target.result;
+try{JSON.parse(content);}catch(err){document.getElementById('plugin-log').textContent='Invalid JSON: '+err.message;return;}
+api('/api/plugins/upload',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({filename:f.name,content:content})}).then(d=>{
+document.getElementById('plugin-log').textContent=d.ok?'Plugin uploaded! Reload to activate.':'Error: '+(d.error||'unknown');
+loadPlugins();
+});
+};
+reader.readAsText(f);
+input.value='';
+}
+function createPlugin(){
+let name=document.getElementById('pname').value.trim();
+let label=document.getElementById('plabel').value.trim()||name;
+let author=document.getElementById('pauthor').value.trim()||'Community';
+let desc=document.getElementById('pdesc').value.trim()||'Custom plugin';
+let extra=document.getElementById('peditor').value.trim();
+if(!name){document.getElementById('create-log').textContent='Name is required';return;}
+let plugin={name:name,label:label,version:'1.0.0',author:author,description:desc,actions:[]};
+if(extra){try{let e=JSON.parse(extra);if(e.actions)plugin.actions=e.actions;if(e.config)plugin.config=e.config;}catch(err){document.getElementById('create-log').textContent='Invalid JSON in extra: '+err.message;return;}}
+let content=JSON.stringify(plugin,null,2);
+let filename=name.replace(/[^a-zA-Z0-9_-]/g,'_')+'.json';
+api('/api/plugins/upload',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({filename:filename,content:content})}).then(d=>{
+document.getElementById('create-log').textContent=d.ok?'Plugin "'+name+'" created!':'Error: '+(d.error||'unknown');
+loadPlugins();
+});
+}
+let uz=document.getElementById('upload-zone');
+if(uz){uz.ondragover=function(e){e.preventDefault();uz.classList.add('dragover');};uz.ondragleave=function(){uz.classList.remove('dragover');};uz.ondrop=function(e){e.preventDefault();uz.classList.remove('dragover');if(e.dataTransfer.files[0]){let fi=document.getElementById('plugin-file');fi.files=e.dataTransfer.files;uploadPlugin(fi);}};}
 loadStatus();
 </script>
 </body>
@@ -284,6 +385,11 @@ static esp_err_t httpApiDuckySaveHandler(httpd_req_t *req);
 static esp_err_t httpApiWifiScanHandler(httpd_req_t *req);
 static esp_err_t httpApiXpHandler(httpd_req_t *req);
 static esp_err_t httpApiRfLiveHandler(httpd_req_t *req);
+static esp_err_t httpApiPluginsHandler(httpd_req_t *req);
+static esp_err_t httpApiPluginsUploadHandler(httpd_req_t *req);
+static esp_err_t httpApiPluginsToggleHandler(httpd_req_t *req);
+static esp_err_t httpApiPluginsDeleteHandler(httpd_req_t *req);
+static esp_err_t httpApiPluginsReloadHandler(httpd_req_t *req);
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // RemoteDashboardApp
@@ -533,8 +639,13 @@ private:
         registerRoute("/api/wifi/scan",       HTTP_POST, httpApiWifiScanHandler);
         registerRoute("/api/xp",              HTTP_GET,  httpApiXpHandler);
         registerRoute("/api/rf/live",         HTTP_GET,  httpApiRfLiveHandler);
+        registerRoute("/api/plugins",          HTTP_GET,  httpApiPluginsHandler);
+        registerRoute("/api/plugins/upload",   HTTP_POST, httpApiPluginsUploadHandler);
+        registerRoute("/api/plugins/toggle",   HTTP_POST, httpApiPluginsToggleHandler);
+        registerRoute("/api/plugins/delete",   HTTP_POST, httpApiPluginsDeleteHandler);
+        registerRoute("/api/plugins/reload",   HTTP_POST, httpApiPluginsReloadHandler);
 
-        ESP_LOGI(TAG_RD, "HTTP server started with %d endpoints", 10);
+        ESP_LOGI(TAG_RD, "HTTP server started with %d endpoints", 16);
         return true;
     }
 
@@ -997,6 +1108,277 @@ static esp_err_t httpApiRfLiveHandler(httpd_req_t *req)
 
     // End SSE stream
     return httpd_resp_send_chunk(req, nullptr, 0);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Plugin API Handlers
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// GET /api/plugins – list all loaded plugins.
+static esp_err_t httpApiPluginsHandler(httpd_req_t *req)
+{
+    auto &pm = hackos::core::PluginManager::instance();
+    const size_t count = pm.pluginCount();
+
+    // Use a larger buffer for plugin data
+    static constexpr size_t PLUGIN_JSON_SIZE = 4096U;
+    char json[PLUGIN_JSON_SIZE];
+    size_t offset = 0U;
+    offset += snprintf(json + offset, sizeof(json) - offset, "{\"plugins\":[");
+
+    for (size_t i = 0U; i < count && offset < sizeof(json) - 256U; ++i)
+    {
+        const auto *info = pm.pluginAt(i);
+        if (info == nullptr)
+        {
+            continue;
+        }
+
+        if (i > 0U)
+        {
+            offset += snprintf(json + offset, sizeof(json) - offset, ",");
+        }
+
+        offset += snprintf(json + offset, sizeof(json) - offset,
+                           "{\"name\":\"%s\",\"label\":\"%s\",\"version\":\"%s\","
+                           "\"author\":\"%s\",\"description\":\"%s\","
+                           "\"category\":\"%s\",\"enabled\":%s,\"actions\":%u}",
+                           info->name, info->label, info->version,
+                           info->author, info->description,
+                           info->category,
+                           info->enabled ? "true" : "false",
+                           static_cast<unsigned>(info->actionCount));
+    }
+    offset += snprintf(json + offset, sizeof(json) - offset, "]}");
+
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_send(req, json, offset);
+}
+
+/// POST /api/plugins/upload – upload a plugin JSON file to /ext/plugins/.
+static esp_err_t httpApiPluginsUploadHandler(httpd_req_t *req)
+{
+    char buf[POST_BUF_MAX];
+    int received = httpd_req_recv(req, buf, sizeof(buf) - 1);
+    if (received <= 0)
+    {
+        httpd_resp_set_type(req, "application/json");
+        return httpd_resp_send(req, "{\"error\":\"no body\"}", 19);
+    }
+    buf[received] = '\0';
+
+    // Parse "filename" and "content"
+    const char *fnKey = strstr(buf, "\"filename\"");
+    const char *ctKey = strstr(buf, "\"content\"");
+    if (fnKey == nullptr || ctKey == nullptr)
+    {
+        httpd_resp_set_type(req, "application/json");
+        return httpd_resp_send(req, "{\"error\":\"missing fields\"}", 25);
+    }
+
+    // Extract filename
+    const char *fnStart = strchr(fnKey + 10, '"');
+    if (fnStart == nullptr)
+    {
+        httpd_resp_set_type(req, "application/json");
+        return httpd_resp_send(req, "{\"error\":\"bad filename\"}", 23);
+    }
+    ++fnStart;
+    const char *fnEnd = strchr(fnStart, '"');
+    if (fnEnd == nullptr || (fnEnd - fnStart) >= 60)
+    {
+        httpd_resp_set_type(req, "application/json");
+        return httpd_resp_send(req, "{\"error\":\"bad filename\"}", 23);
+    }
+
+    char filename[64];
+    size_t fnLen = static_cast<size_t>(fnEnd - fnStart);
+    memcpy(filename, fnStart, fnLen);
+    filename[fnLen] = '\0';
+
+    // Validate filename
+    if (strchr(filename, '/') != nullptr || strchr(filename, '\\') != nullptr ||
+        strstr(filename, "..") != nullptr)
+    {
+        httpd_resp_set_type(req, "application/json");
+        return httpd_resp_send(req, "{\"error\":\"invalid filename\"}", 27);
+    }
+
+    // Must end with .json
+    size_t nameLen = strlen(filename);
+    if (nameLen < 6 || strcmp(filename + nameLen - 5, ".json") != 0)
+    {
+        httpd_resp_set_type(req, "application/json");
+        return httpd_resp_send(req, "{\"error\":\"must be .json\"}", 24);
+    }
+
+    // Extract content (everything between "content":"..." )
+    const char *ctStart = strchr(ctKey + 9, '"');
+    if (ctStart == nullptr)
+    {
+        httpd_resp_set_type(req, "application/json");
+        return httpd_resp_send(req, "{\"error\":\"bad content\"}", 22);
+    }
+    ++ctStart;
+    const char *ctEnd = ctStart;
+    while (*ctEnd != '\0')
+    {
+        if (*ctEnd == '\\' && *(ctEnd + 1) != '\0')
+        {
+            ctEnd += 2;
+            continue;
+        }
+        if (*ctEnd == '"')
+        {
+            break;
+        }
+        ++ctEnd;
+    }
+    size_t contentLen = static_cast<size_t>(ctEnd - ctStart);
+
+    char path[128];
+    snprintf(path, sizeof(path), "/ext/plugins/%s", filename);
+
+    auto &vfs = hackos::storage::VirtualFS::instance();
+    fs::File file = vfs.open(path, "w");
+    if (!file)
+    {
+        httpd_resp_set_type(req, "application/json");
+        return httpd_resp_send(req, "{\"error\":\"write failed\"}", 23);
+    }
+    file.write(reinterpret_cast<const uint8_t *>(ctStart), contentLen);
+    file.close();
+
+    ESP_LOGI(TAG_RD, "Saved plugin: %s (%u bytes)", path,
+             static_cast<unsigned>(contentLen));
+
+    // Reload plugins
+    hackos::core::PluginManager::instance().reload();
+
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_send(req, "{\"ok\":true}", 11);
+}
+
+/// POST /api/plugins/toggle – enable/disable a plugin.
+static esp_err_t httpApiPluginsToggleHandler(httpd_req_t *req)
+{
+    char buf[256];
+    int received = httpd_req_recv(req, buf, sizeof(buf) - 1);
+    if (received <= 0)
+    {
+        httpd_resp_set_type(req, "application/json");
+        return httpd_resp_send(req, "{\"error\":\"no body\"}", 19);
+    }
+    buf[received] = '\0';
+
+    // Parse name and enabled
+    const char *nameKey = strstr(buf, "\"name\"");
+    if (nameKey == nullptr)
+    {
+        httpd_resp_set_type(req, "application/json");
+        return httpd_resp_send(req, "{\"error\":\"missing name\"}", 23);
+    }
+
+    const char *valStart = strchr(nameKey + 6, '"');
+    if (valStart == nullptr)
+    {
+        httpd_resp_set_type(req, "application/json");
+        return httpd_resp_send(req, "{\"error\":\"bad format\"}", 21);
+    }
+    ++valStart;
+    const char *valEnd = strchr(valStart, '"');
+    if (valEnd == nullptr || (valEnd - valStart) >= 32)
+    {
+        httpd_resp_set_type(req, "application/json");
+        return httpd_resp_send(req, "{\"error\":\"bad name\"}", 20);
+    }
+
+    char pluginName[32];
+    size_t pnLen = static_cast<size_t>(valEnd - valStart);
+    memcpy(pluginName, valStart, pnLen);
+    pluginName[pnLen] = '\0';
+
+    bool enabled = (strstr(buf, "\"enabled\":true") != nullptr);
+
+    auto &pm = hackos::core::PluginManager::instance();
+    if (pm.setEnabled(pluginName, enabled))
+    {
+        httpd_resp_set_type(req, "application/json");
+        return httpd_resp_send(req, "{\"ok\":true}", 11);
+    }
+
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_send(req, "{\"error\":\"plugin not found\"}", 27);
+}
+
+/// POST /api/plugins/delete – delete a plugin file.
+static esp_err_t httpApiPluginsDeleteHandler(httpd_req_t *req)
+{
+    char buf[256];
+    int received = httpd_req_recv(req, buf, sizeof(buf) - 1);
+    if (received <= 0)
+    {
+        httpd_resp_set_type(req, "application/json");
+        return httpd_resp_send(req, "{\"error\":\"no body\"}", 19);
+    }
+    buf[received] = '\0';
+
+    const char *nameKey = strstr(buf, "\"name\"");
+    if (nameKey == nullptr)
+    {
+        httpd_resp_set_type(req, "application/json");
+        return httpd_resp_send(req, "{\"error\":\"missing name\"}", 23);
+    }
+
+    const char *valStart = strchr(nameKey + 6, '"');
+    if (valStart == nullptr)
+    {
+        httpd_resp_set_type(req, "application/json");
+        return httpd_resp_send(req, "{\"error\":\"bad format\"}", 21);
+    }
+    ++valStart;
+    const char *valEnd = strchr(valStart, '"');
+    if (valEnd == nullptr || (valEnd - valStart) >= 32)
+    {
+        httpd_resp_set_type(req, "application/json");
+        return httpd_resp_send(req, "{\"error\":\"bad name\"}", 20);
+    }
+
+    char pluginName[32];
+    size_t pnLen = static_cast<size_t>(valEnd - valStart);
+    memcpy(pluginName, valStart, pnLen);
+    pluginName[pnLen] = '\0';
+
+    // Validate: no path traversal in plugin name
+    if (strstr(pluginName, "..") != nullptr || strchr(pluginName, '/') != nullptr)
+    {
+        httpd_resp_set_type(req, "application/json");
+        return httpd_resp_send(req, "{\"error\":\"invalid name\"}", 23);
+    }
+
+    auto &pm = hackos::core::PluginManager::instance();
+    if (pm.deletePlugin(pluginName))
+    {
+        httpd_resp_set_type(req, "application/json");
+        return httpd_resp_send(req, "{\"ok\":true}", 11);
+    }
+
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_send(req, "{\"error\":\"delete failed\"}", 24);
+}
+
+/// POST /api/plugins/reload – reload plugins from SD card.
+static esp_err_t httpApiPluginsReloadHandler(httpd_req_t *req)
+{
+    auto &pm = hackos::core::PluginManager::instance();
+    size_t loaded = pm.reload();
+
+    char json[64];
+    snprintf(json, sizeof(json), "{\"ok\":true,\"loaded\":%u}",
+             static_cast<unsigned>(loaded));
+
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_send(req, json, strlen(json));
 }
 
 } // namespace

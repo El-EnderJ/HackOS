@@ -1,0 +1,43 @@
+{
+  "name": "gpio_tester",
+  "label": "GPIO Tester",
+  "version": "1.0.0",
+  "author": "HackOS Team",
+  "description": "Test various GPIO pins on the ESP32",
+  "category": "debug",
+  "config": {
+    "protocol": "GPIO"
+  },
+  "actions": [
+    {
+      "type": "gpio_toggle",
+      "pin": 2,
+      "label": "Toggle GPIO 2"
+    },
+    {
+      "type": "gpio_toggle",
+      "pin": 4,
+      "label": "Toggle GPIO 4"
+    },
+    {
+      "type": "gpio_toggle",
+      "pin": 15,
+      "label": "Toggle GPIO 15"
+    },
+    {
+      "type": "gpio_toggle",
+      "pin": 25,
+      "label": "Toggle GPIO 25"
+    },
+    {
+      "type": "gpio_toggle",
+      "pin": 26,
+      "label": "Toggle GPIO 26"
+    },
+    {
+      "type": "gpio_toggle",
+      "pin": 27,
+      "label": "Toggle GPIO 27"
+    }
+  ]
+}

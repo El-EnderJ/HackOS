@@ -35,12 +35,14 @@
 #include "apps/ghostnet_app.h"
 #include "apps/remote_dashboard_app.h"
 #include "apps/signal_analyzer_app.h"
+#include "apps/plugin_manager_app.h"
 #include "apps/wifi_tools_app.h"
 #include "config.h"
 #include "core/app_manager.h"
 #include "core/event_system.h"
 #include "core/experience_manager.h"
 #include "core/message_bus.h"
+#include "core/plugin_manager.h"
 #include "core/power_manager.h"
 #include "core/state_machine.h"
 #include "core/system_core.h"
@@ -131,6 +133,17 @@ void setup()
     (void)AppManager::instance().registerApp("ghostnet", createGhostNetApp);
     (void)AppManager::instance().registerApp("remote_dashboard", createRemoteDashboardApp);
     (void)AppManager::instance().registerApp("signal_analyzer", createSignalAnalyzerApp);
+    (void)AppManager::instance().registerApp("plugin_manager", createPluginManagerApp);
+
+    // ── Dynamic Plugin Loading ───────────────────────────────────────────
+    {
+        auto &pm = hackos::core::PluginManager::instance();
+        const size_t loaded = pm.scanAndLoad();
+        const size_t registered = pm.registerAll();
+        ESP_LOGI(TAG, "Plugins: %u loaded, %u registered",
+                 static_cast<unsigned>(loaded), static_cast<unsigned>(registered));
+    }
+
     (void)AppManager::instance().launchApp("launcher");
 
     const uint32_t heapSize = ESP.getHeapSize();
