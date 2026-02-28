@@ -763,6 +763,13 @@ private:
     /// Scratch buffer for variable expansion.
     char     expandedBuf_[EXPANDED_BUF_SIZE];
 
+    // ── Target OS helper ──────────────────────────────────────────────
+
+    bool isMacTarget() const
+    {
+        return static_cast<TargetOS>(selectedTargetIdx_) == TargetOS::MAC;
+    }
+
     // ── Dirty/redraw helpers ────────────────────────────────────────────
 
     bool anyWidgetDirty() const
@@ -1694,8 +1701,7 @@ private:
         {
             const uint8_t key = singleKeyToHid(dl.arg);
             // On Mac targets, CTRL maps to Command (GUI) for standard shortcuts
-            const uint8_t mod = (static_cast<TargetOS>(selectedTargetIdx_) == TargetOS::MAC)
-                                    ? MOD_LGUI : MOD_LCTRL;
+            const uint8_t mod = isMacTarget() ? MOD_LGUI : MOD_LCTRL;
             sendKeyPress(mod, key);
             lastKeySendMs_ = nowMs;
             advanceLine();
@@ -1723,7 +1729,7 @@ private:
         case DuckyCmd::CMD_CTRL_ALT:
         {
             const uint8_t key = singleKeyToHid(dl.arg);
-            const uint8_t mod = (static_cast<TargetOS>(selectedTargetIdx_) == TargetOS::MAC)
+            const uint8_t mod = isMacTarget()
                                     ? static_cast<uint8_t>(MOD_LGUI | MOD_LALT)
                                     : static_cast<uint8_t>(MOD_LCTRL | MOD_LALT);
             sendKeyPress(mod, key);
@@ -1735,7 +1741,7 @@ private:
         case DuckyCmd::CMD_CTRL_SHIFT:
         {
             const uint8_t key = singleKeyToHid(dl.arg);
-            const uint8_t mod = (static_cast<TargetOS>(selectedTargetIdx_) == TargetOS::MAC)
+            const uint8_t mod = isMacTarget()
                                     ? static_cast<uint8_t>(MOD_LGUI | MOD_LSHIFT)
                                     : static_cast<uint8_t>(MOD_LCTRL | MOD_LSHIFT);
             sendKeyPress(mod, key);
@@ -1945,7 +1951,7 @@ private:
             }
             else
             {
-                ESP_LOGW(TAG_BBT, "TARGET: unknown OS '%s'", dl.arg);
+                ESP_LOGW(TAG_BBT, "TARGET: unknown OS '%s' (valid: WINDOWS, MAC, ANDROID)", dl.arg);
             }
             ESP_LOGI(TAG_BBT, "Target OS set: %s", TARGET_OS_NAMES[selectedTargetIdx_]);
             advanceLine();
