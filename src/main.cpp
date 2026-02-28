@@ -36,6 +36,7 @@
 #include "config.h"
 #include "core/app_manager.h"
 #include "core/event_system.h"
+#include "core/experience_manager.h"
 #include "core/message_bus.h"
 #include "core/power_manager.h"
 #include "core/state_machine.h"
@@ -98,6 +99,10 @@ void setup()
 
     const bool foldersOk = hackos::storage::StorageInit::ensureFolderStructure();
     ESP_LOGI(TAG, "SD folder structure: %s", foldersOk ? "OK" : "INCOMPLETE");
+
+    // ── Gamification – ExperienceManager ─────────────────────────────────
+    const bool xpOk = ExperienceManager::instance().init();
+    ESP_LOGI(TAG, "ExperienceManager init: %s", xpOk ? "OK" : "FAIL");
 
     ESP_LOGI(TAG, "EventSystem init: %s", eventSystemOk ? "OK" : "FAIL");
     ESP_LOGI(TAG, "AppManager init: %s", appManagerOk ? "OK" : "FAIL");

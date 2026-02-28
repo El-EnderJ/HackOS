@@ -304,6 +304,8 @@ public:
             {
                 finishTx();
                 state_ = BFState::DONE;
+                EventSystem::instance().postEvent(
+                    {EventType::EVT_XP_EARNED, XP_SUBGHZ_OP, 0, nullptr});
                 needsRedraw_ = true;
             }
         }

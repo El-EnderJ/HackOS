@@ -301,6 +301,12 @@ public:
             dev.name[DEVICE_NAME_MAX_LEN] = '\0';
             dev.suspicious = isSuspiciousDevice(dev.name);
             ++deviceCount_;
+
+            if (deviceCount_ == 1U)
+            {
+                EventSystem::instance().postEvent(
+                    {EventType::EVT_XP_EARNED, XP_BLE_SCAN, 0, nullptr});
+            }
         }
     }
 

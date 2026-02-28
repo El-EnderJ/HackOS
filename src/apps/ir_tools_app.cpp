@@ -463,6 +463,8 @@ private:
             IRTransceiver::instance().deinit();
             transitionTo(IRState::TV_BGONE_DONE);
             ESP_LOGI(TAG_IR_APP, "TV-B-Gone complete");
+            EventSystem::instance().postEvent(
+                {EventType::EVT_XP_EARNED, XP_IR_SEND, 0, nullptr});
             return;
         }
 
