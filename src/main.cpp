@@ -40,6 +40,7 @@
 #include "apps/rf_analyzer_pro_app.h"
 #include "apps/signal_lab_app.h"
 #include "apps/net_forensics_app.h"
+#include "apps/hardware_bridge_app.h"
 #include "apps/wifi_tools_app.h"
 #include "config.h"
 #include "core/app_manager.h"
@@ -142,6 +143,7 @@ void setup()
     (void)AppManager::instance().registerApp("rf_analyzer_pro", createRFAnalyzerProApp);
     (void)AppManager::instance().registerApp("signal_lab", createSignalLabApp);
     (void)AppManager::instance().registerApp("net_forensics", createNetForensicsApp);
+    (void)AppManager::instance().registerApp("hw_bridge", createHardwareBridgeApp);
 
     // ── Dynamic Plugin Loading ───────────────────────────────────────────
     {
