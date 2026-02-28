@@ -28,6 +28,8 @@ const char *const StorageInit::REQUIRED_DIRS[DIR_COUNT] = {
     "/ext/pcap",
     "/ext/hwbridge",
     "/ext/assets/subghz",
+    "/ext/scripts",
+    "/ext/update",
 };
 
 // ── Public API ───────────────────────────────────────────────────────────────
