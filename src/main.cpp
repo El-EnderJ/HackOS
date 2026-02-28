@@ -33,6 +33,7 @@
 #include "apps/subghz_bruteforcer_app.h"
 #include "apps/badbt_app.h"
 #include "apps/ghostnet_app.h"
+#include "apps/remote_dashboard_app.h"
 #include "apps/wifi_tools_app.h"
 #include "config.h"
 #include "core/app_manager.h"
@@ -127,6 +128,7 @@ void setup()
     (void)AppManager::instance().registerApp("subghz_bf", createSubGhzBruteforceApp);
     (void)AppManager::instance().registerApp("badbt", createBadBtApp);
     (void)AppManager::instance().registerApp("ghostnet", createGhostNetApp);
+    (void)AppManager::instance().registerApp("remote_dashboard", createRemoteDashboardApp);
     (void)AppManager::instance().launchApp("launcher");
 
     const uint32_t heapSize = ESP.getHeapSize();

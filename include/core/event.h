@@ -10,6 +10,7 @@ enum class EventType : uint8_t
     EVT_APP,
     EVT_XP_EARNED,
     EVT_GHOSTNET,
+    EVT_REMOTE_CMD,
 };
 
 struct Event
@@ -42,6 +43,7 @@ enum : int32_t
     XP_BLE_SCAN    = 10,
     XP_SUBGHZ_OP   = 25,
     XP_BADBT_RUN   = 20,
-    XP_PORTAL_LOOT = 30,
-    XP_GHOSTNET_OP = 20,
+    XP_PORTAL_LOOT  = 30,
+    XP_GHOSTNET_OP  = 20,
+    XP_DASHBOARD_OP = 15,
 };
