@@ -70,3 +70,8 @@ constexpr uint8_t PIN_RF_TX = 25U;
 
 /// @brief UART RX pin for the RF module.
 constexpr uint8_t PIN_RF_RX = 16U;
+
+// ── Buzzer / speaker ──────────────────────────────────────────────────────────
+
+/// @brief PWM-capable pin driving a passive buzzer for audio feedback.
+constexpr uint8_t PIN_BUZZER = 27U;
