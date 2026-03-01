@@ -51,6 +51,9 @@ static constexpr size_t LUA_MAX_LINES = 128U;
 /// @brief Maximum loop nesting depth.
 static constexpr size_t LUA_MAX_LOOP_DEPTH = 4U;
 
+/// @brief Maximum iterations per loop (safety limit).
+static constexpr int32_t LUA_MAX_LOOP_ITERATIONS = 1000;
+
 /// @brief Variable value (number or string).
 struct LuaVar
 {

@@ -25,6 +25,8 @@ namespace hackos::core {
 // ── Default CS pin assignments ───────────────────────────────────────────────
 // These use available GPIO pins not already in use by other peripherals.
 
+/// @note GPIO 2 is the onboard LED on many ESP32 DevKit boards.
+///       If the LED conflicts, change to an available GPIO (e.g., 12, 13).
 static constexpr uint8_t PIN_NRF24_CS  = 2U;   ///< NRF24 chip-select
 static constexpr uint8_t PIN_CC1101_CS = 15U;   ///< CC1101 chip-select
 

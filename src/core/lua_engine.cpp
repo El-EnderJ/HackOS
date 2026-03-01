@@ -621,8 +621,8 @@ LuaResult LuaEngine::handleWhile(size_t &lineIdx, size_t endLine)
         return LuaResult::ERR_SYNTAX;
     }
 
-    // Execute loop body while condition is true (max 1000 iterations for safety)
-    for (int iter = 0; iter < 1000 && evaluateCondition(condBuf); ++iter)
+    // Execute loop body while condition is true (safety limit)
+    for (int iter = 0; iter < LUA_MAX_LOOP_ITERATIONS && evaluateCondition(condBuf); ++iter)
     {
         if (stopRequested_)
         {
@@ -710,7 +710,8 @@ LuaResult LuaEngine::handleFor(size_t &lineIdx, size_t endLine)
 
     if (stepVal == 0)
     {
-        stepVal = 1;
+        std::strncpy(errMsg_, "For step cannot be 0", sizeof(errMsg_) - 1U);
+        return LuaResult::ERR_RUNTIME;
     }
 
     for (int32_t val = startVal;

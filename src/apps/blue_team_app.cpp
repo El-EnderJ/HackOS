@@ -76,6 +76,10 @@ static const char *const TRACKER_PREFIXES[TRACKER_PREFIX_COUNT] = {
     "Find My",
 };
 
+// Apple AirTag / Find My sub-type identifiers in manufacturer data
+static constexpr uint8_t APPLE_SUBTYPE_FINDMY    = 0x12U;
+static constexpr uint8_t APPLE_SUBTYPE_PROXIMITY = 0x10U;
+
 // Apple manufacturer ID for AirTag detection
 static constexpr uint16_t APPLE_COMPANY_ID = 0x004CU;
 
@@ -91,6 +95,7 @@ enum class ThreatType : uint8_t
     TRACKER_OTHER,
 };
 
+static const char *threatTypeStr(ThreatType t) __attribute__((unused));
 static const char *threatTypeStr(ThreatType t)
 {
     switch (t)
@@ -227,7 +232,7 @@ static bool isAppleTracker(const uint8_t *payload, size_t len)
                 if (fieldLen >= 5U)
                 {
                     const uint8_t subType = payload[offset + 4U];
-                    if (subType == 0x12U || subType == 0x10U)
+                    if (subType == APPLE_SUBTYPE_FINDMY || subType == APPLE_SUBTYPE_PROXIMITY)
                     {
                         return true;
                     }
@@ -652,7 +657,7 @@ private:
 
         // Start WiFi promiscuous mode for deauth detection
         g_deauthCount = 0U;
-        g_deauthWindowStart_ = nowMs();
+        deauthWindowStart_ = nowMs();
 
         wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
         esp_wifi_init(&cfg);
@@ -715,7 +720,7 @@ private:
         lastIdsTick_ = now;
 
         // Check deauth rate
-        if ((now - g_deauthWindowStart_) >= DEAUTH_WINDOW_MS)
+        if ((now - deauthWindowStart_) >= DEAUTH_WINDOW_MS)
         {
             if (g_deauthCount >= DEAUTH_THRESHOLD)
             {
@@ -723,7 +728,7 @@ private:
                 ToastManager::instance().show("[!] DEAUTH ATTACK!");
             }
             g_deauthCount = 0U;
-            g_deauthWindowStart_ = now;
+            deauthWindowStart_ = now;
         }
 
         // Check BLE spam rate (many new MACs in short window)
@@ -790,7 +795,7 @@ private:
         return static_cast<uint32_t>(xTaskGetTickCount() * portTICK_PERIOD_MS);
     }
 
-    uint32_t g_deauthWindowStart_; ///< shadows global for class-scoped tracking
+    uint32_t deauthWindowStart_; ///< Class-scoped deauth window start time
 
     friend class BlueTeamScanCb;
 };
