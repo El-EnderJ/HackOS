@@ -361,9 +361,14 @@ protected:
             if (probeCount_ > 0U &&
                 (now - karmaStartMs_) > KARMA_PROBE_TIMEOUT_MS)
             {
-                // Auto-select strongest probe and start AP
-                selectStrongestProbe();
-                startKarmaAp();
+                // Only auto-select if no new probes in the last 3 seconds
+                const bool recentActivity = (probeCount_ > 0U) &&
+                    (now - probeEntries_[probeCount_ - 1U].timestampMs < 3000U);
+                if (!recentActivity)
+                {
+                    selectStrongestProbe();
+                    startKarmaAp();
+                }
             }
             break;
 

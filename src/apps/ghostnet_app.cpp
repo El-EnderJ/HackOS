@@ -47,6 +47,7 @@ static constexpr size_t VISIBLE_ROWS         = 4U;
 static constexpr size_t CHAT_VISIBLE_ROWS    = 4U;
 static constexpr size_t CMD_MENU_ITEMS       = 4U;
 static constexpr size_t SWARM_MENU_ITEMS     = 7U;
+static constexpr size_t SWARM_VISIBLE_ROWS   = 4U;
 static constexpr uint32_t RADAR_REFRESH_MS   = 500U;
 static constexpr size_t LABEL_BUF_LEN        = 32U;
 
@@ -671,8 +672,8 @@ private:
         for (size_t i = 0U; i < SWARM_MENU_ITEMS; ++i)
         {
             // Only show 4 items at a time with scrolling
-            const size_t scrollBase = (swarmMenuIdx_ >= 4U) ? (swarmMenuIdx_ - 3U) : 0U;
-            if (i < scrollBase || i >= scrollBase + 4U)
+            const size_t scrollBase = (swarmMenuIdx_ >= SWARM_VISIBLE_ROWS) ? (swarmMenuIdx_ - SWARM_VISIBLE_ROWS + 1U) : 0U;
+            if (i < scrollBase || i >= scrollBase + SWARM_VISIBLE_ROWS)
             {
                 continue;
             }

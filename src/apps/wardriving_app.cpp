@@ -146,7 +146,7 @@ protected:
 
         // Try to initialise GPS on Serial2
         Serial2.begin(GPS_SERIAL_BAUD, SERIAL_8N1, GPS_RX_PIN, GPS_TX_PIN);
-        gpsAvailable_ = true; // Will be validated on first read
+        gpsAvailable_ = false; // Will be set true on first valid NMEA read
 
         state_ = WDState::MENU_MAIN;
         needsRedraw_ = true;
@@ -308,9 +308,13 @@ private:
             std::snprintf(buf, sizeof(buf), "GPS: %u sats",
                           static_cast<unsigned>(gpsFix_.satellites));
         }
-        else
+        else if (gpsAvailable_)
         {
             std::snprintf(buf, sizeof(buf), "GPS: No fix");
+        }
+        else
+        {
+            std::snprintf(buf, sizeof(buf), "GPS: not detected");
         }
         disp.drawText(2, 22, buf);
 
@@ -561,6 +565,12 @@ private:
             return;
         }
 
+        // Any valid NMEA sentence means GPS module is connected
+        if (sentence[0] == '$')
+        {
+            gpsAvailable_ = true;
+        }
+
         // $GPGGA: Global Positioning System Fix Data
         if (std::strncmp(sentence, "$GPGGA", 6U) == 0 ||
             std::strncmp(sentence, "$GNGGA", 6U) == 0)
@@ -584,8 +594,8 @@ private:
         splitCsv(sentence, fields, 15U);
 
         // Quality indicator (field 6): 0=invalid, 1+=valid
-        const int quality = std::atoi(fields[6]);
-        if (quality == 0)
+        const int fixQuality = std::atoi(fields[6]);
+        if (fixQuality == 0)
         {
             gpsFix_.valid = false;
             return;
