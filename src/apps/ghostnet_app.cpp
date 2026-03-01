@@ -42,10 +42,12 @@ namespace
 
 // ── Tunables ─────────────────────────────────────────────────────────────────
 
-static constexpr size_t MENU_ITEM_COUNT      = 5U;
+static constexpr size_t MENU_ITEM_COUNT      = 6U;
 static constexpr size_t VISIBLE_ROWS         = 4U;
 static constexpr size_t CHAT_VISIBLE_ROWS    = 4U;
 static constexpr size_t CMD_MENU_ITEMS       = 4U;
+static constexpr size_t SWARM_MENU_ITEMS     = 7U;
+static constexpr size_t SWARM_VISIBLE_ROWS   = 4U;
 static constexpr uint32_t RADAR_REFRESH_MS   = 500U;
 static constexpr size_t LABEL_BUF_LEN        = 32U;
 
@@ -58,6 +60,7 @@ enum class GhostState : uint8_t
     CHAT_VIEW,
     REMOTE_EXEC,
     SYNC_VIEW,
+    SWARM_CONTROL, ///< Swarm Intelligence – role & distributed commands
 };
 
 // ── Quick-send chat messages ─────────────────────────────────────────────────
@@ -85,6 +88,7 @@ public:
         , chatScrollOffset_(0U)
         , quickMsgIdx_(0U)
         , cmdMenuIdx_(0U)
+        , swarmMenuIdx_(0U)
     {
     }
 
@@ -105,7 +109,7 @@ public:
         }
 
         static const char *const mainItems[MENU_ITEM_COUNT] = {
-            "Radar", "Chat", "Remote Exec", "Sync Data", "Back",
+            "Radar", "Chat", "Remote Exec", "Sync Data", "Swarm Control", "Back",
         };
         menu_.setItems(mainItems, MENU_ITEM_COUNT);
 
@@ -160,6 +164,9 @@ public:
         case GhostState::SYNC_VIEW:
             drawSyncView(disp);
             break;
+        case GhostState::SWARM_CONTROL:
+            drawSwarmControl(disp);
+            break;
         }
 
         disp.present();
@@ -205,6 +212,9 @@ public:
             break;
         case GhostState::SYNC_VIEW:
             handleSyncInput(input);
+            break;
+        case GhostState::SWARM_CONTROL:
+            handleSwarmInput(input);
             break;
         }
     }
@@ -475,7 +485,12 @@ private:
                 state_ = GhostState::SYNC_VIEW;
                 needsRedraw_ = true;
                 break;
-            case 4U: // Back
+            case 4U: // Swarm Control
+                state_ = GhostState::SWARM_CONTROL;
+                swarmMenuIdx_ = 0U;
+                needsRedraw_ = true;
+                break;
+            case 5U: // Back
             {
                 const Event evt{EventType::EVT_SYSTEM, SYSTEM_EVENT_BACK,
                                 0, nullptr};
@@ -487,7 +502,7 @@ private:
             }
 
             // Award XP for using GhostNet.
-            if (sel < 4U)
+            if (sel < 5U)
             {
                 const Event xpEvt{EventType::EVT_XP_EARNED, XP_GHOSTNET_OP,
                                   0, nullptr};
@@ -628,6 +643,123 @@ private:
         }
     }
 
+    // ── Swarm Control ────────────────────────────────────────────────────
+
+    void drawSwarmControl(DisplayManager &disp)
+    {
+        const auto &gn = hackos::core::GhostNetManager::instance();
+
+        // Header with role
+        static const char *const ROLE_NAMES[] = {"Node", "Master", "Decoy"};
+        const uint8_t role = gn.ownRole();
+        char hdr[32];
+        std::snprintf(hdr, sizeof(hdr), "Swarm [%s]",
+                      (role < 3U) ? ROLE_NAMES[role] : "?");
+        disp.drawText(0, 10, hdr);
+        disp.drawLine(0, 18, 127, 18);
+
+        static const char *const swarmLabels[SWARM_MENU_ITEMS] = {
+            "Set: Master",
+            "Set: Node",
+            "Set: Decoy",
+            "Beacon Spam All",
+            "Karma All",
+            "PMKID All",
+            "Back",
+        };
+
+        // Highlight selected item
+        for (size_t i = 0U; i < SWARM_MENU_ITEMS; ++i)
+        {
+            // Only show 4 items at a time with scrolling
+            const size_t scrollBase = (swarmMenuIdx_ >= SWARM_VISIBLE_ROWS) ? (swarmMenuIdx_ - SWARM_VISIBLE_ROWS + 1U) : 0U;
+            if (i < scrollBase || i >= scrollBase + SWARM_VISIBLE_ROWS)
+            {
+                continue;
+            }
+
+            const int16_t y = 22 + static_cast<int16_t>(i - scrollBase) * 10;
+            if (i == swarmMenuIdx_)
+            {
+                disp.fillRect(0, y - 1, 128, 9);
+                disp.drawText(2, y, swarmLabels[i], 1U, 0U); // inverted
+            }
+            else
+            {
+                disp.drawText(2, y, swarmLabels[i]);
+            }
+        }
+
+        // Peer count at bottom
+        char peerInfo[24];
+        std::snprintf(peerInfo, sizeof(peerInfo), "Peers: %u",
+                      static_cast<unsigned>(gn.peerCount()));
+        disp.drawText(0, 56, peerInfo);
+    }
+
+    void handleSwarmInput(InputManager::InputEvent input)
+    {
+        auto &gn = hackos::core::GhostNetManager::instance();
+
+        if (input == InputManager::InputEvent::UP)
+        {
+            if (swarmMenuIdx_ > 0U)
+            {
+                --swarmMenuIdx_;
+            }
+            needsRedraw_ = true;
+        }
+        else if (input == InputManager::InputEvent::DOWN)
+        {
+            if (swarmMenuIdx_ < SWARM_MENU_ITEMS - 1U)
+            {
+                ++swarmMenuIdx_;
+            }
+            needsRedraw_ = true;
+        }
+        else if (input == InputManager::InputEvent::BUTTON_PRESS)
+        {
+            switch (swarmMenuIdx_)
+            {
+            case 0U: // Set Master
+                gn.setOwnRole(hackos::core::GhostNetManager::ROLE_MASTER);
+                ESP_LOGI(TAG_GNA, "Role set to MASTER");
+                break;
+            case 1U: // Set Node
+                gn.setOwnRole(hackos::core::GhostNetManager::ROLE_NODE);
+                ESP_LOGI(TAG_GNA, "Role set to NODE");
+                break;
+            case 2U: // Set Decoy
+                gn.setOwnRole(hackos::core::GhostNetManager::ROLE_DECOY);
+                ESP_LOGI(TAG_GNA, "Role set to DECOY");
+                break;
+            case 3U: // Beacon Spam All
+                (void)gn.sendCommand(hackos::core::GhostCmd::BEACON_SPAM);
+                ESP_LOGI(TAG_GNA, "Sent BEACON_SPAM to all peers");
+                break;
+            case 4U: // Karma All
+                (void)gn.sendCommand(hackos::core::GhostCmd::KARMA_ATTACK);
+                ESP_LOGI(TAG_GNA, "Sent KARMA_ATTACK to all peers");
+                break;
+            case 5U: // PMKID All
+                (void)gn.sendCommand(hackos::core::GhostCmd::PMKID_SCAN);
+                ESP_LOGI(TAG_GNA, "Sent PMKID_SCAN to all peers");
+                break;
+            case 6U: // Back
+                state_ = GhostState::MAIN_MENU;
+                break;
+            default:
+                break;
+            }
+            needsRedraw_ = true;
+        }
+        else if (input == InputManager::InputEvent::LEFT)
+        {
+            state_ = GhostState::MAIN_MENU;
+            needsRedraw_ = true;
+        }
+    }
+
     // ── Members ──────────────────────────────────────────────────────────
 
     StatusBar    statusBar_;
@@ -645,6 +777,9 @@ private:
 
     // Remote exec.
     size_t cmdMenuIdx_;
+
+    // Swarm control.
+    size_t swarmMenuIdx_;
 };
 
 } // namespace

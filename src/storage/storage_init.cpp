@@ -30,6 +30,8 @@ const char *const StorageInit::REQUIRED_DIRS[DIR_COUNT] = {
     "/ext/assets/subghz",
     "/ext/scripts",
     "/ext/update",
+    "/ext/pmkid",
+    "/ext/wardriving",
 };
 
 // ── Public API ───────────────────────────────────────────────────────────────

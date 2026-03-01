@@ -46,6 +46,8 @@
 #include "apps/cloud_exfil_app.h"
 #include "apps/rolljam_app.h"
 #include "apps/sd_updater_app.h"
+#include "apps/wifi_mastery_app.h"
+#include "apps/wardriving_app.h"
 #include "config.h"
 #include "core/app_manager.h"
 #include "core/event_system.h"
@@ -154,6 +156,8 @@ void setup()
     (void)AppManager::instance().registerApp("cloud_exfil", createCloudExfilApp);
     (void)AppManager::instance().registerApp("rolljam", createRollJamApp);
     (void)AppManager::instance().registerApp("sd_updater", createSDUpdaterApp);
+    (void)AppManager::instance().registerApp("wifi_mastery", createWifiMasteryApp);
+    (void)AppManager::instance().registerApp("wardriving", createWardrivingApp);
 
     // ── Dynamic Plugin Loading ───────────────────────────────────────────
     {

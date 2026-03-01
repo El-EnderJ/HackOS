@@ -60,6 +60,7 @@ GhostNetManager::GhostNetManager()
     , chatCount_(0U)
     , lastCmd_(GhostCmd::NONE)
     , lastBeaconMs_(0U)
+    , ownRole_(ROLE_NODE)
 {
     std::memset(nodeName_, 0, sizeof(nodeName_));
     std::memset(ownMac_, 0, sizeof(ownMac_));
@@ -366,6 +367,39 @@ bool GhostNetManager::sendCommand(GhostCmd cmd)
 {
     const uint8_t cmdByte = static_cast<uint8_t>(cmd);
     return sendPacket(GhostMsgType::CMD_REQUEST, &cmdByte, 1U);
+}
+
+bool GhostNetManager::sendCommandTo(GhostCmd cmd, const uint8_t *peerMac)
+{
+    if (!initialized_ || peerMac == nullptr)
+    {
+        return false;
+    }
+
+    // Build the packet manually for unicast to a specific peer.
+    const uint8_t cmdByte = static_cast<uint8_t>(cmd);
+
+    uint8_t buf[250];
+    auto *pkt = reinterpret_cast<GhostPacket *>(buf);
+
+    pkt->magic[0] = GHOST_MAGIC[0];
+    pkt->magic[1] = GHOST_MAGIC[1];
+    pkt->type = GhostMsgType::CMD_REQUEST;
+    pkt->seqNo = seqNo_++;
+    std::memcpy(pkt->srcMac, ownMac_, 6);
+    std::strncpy(pkt->srcName, nodeName_, sizeof(pkt->srcName) - 1U);
+    pkt->srcName[sizeof(pkt->srcName) - 1U] = '\0';
+    pkt->payloadLen = 1U;
+    buf[GHOST_HEADER_SIZE] = cmdByte;
+
+    const size_t totalLen = GHOST_HEADER_SIZE + 1U;
+    const esp_err_t err = esp_now_send(peerMac, buf, totalLen);
+
+    ESP_LOGI(TAG_GN, "Sent cmd 0x%02X to peer %02X:%02X:%02X:%02X:%02X:%02X",
+             cmdByte, peerMac[0], peerMac[1], peerMac[2],
+             peerMac[3], peerMac[4], peerMac[5]);
+
+    return (err == ESP_OK);
 }
 
 // ── Packet assembly and transmission ─────────────────────────────────────────
