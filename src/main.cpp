@@ -48,6 +48,7 @@
 #include "apps/sd_updater_app.h"
 #include "apps/wifi_mastery_app.h"
 #include "apps/wardriving_app.h"
+#include "apps/blue_team_app.h"
 #include "config.h"
 #include "core/app_manager.h"
 #include "core/event_system.h"
@@ -158,6 +159,7 @@ void setup()
     (void)AppManager::instance().registerApp("sd_updater", createSDUpdaterApp);
     (void)AppManager::instance().registerApp("wifi_mastery", createWifiMasteryApp);
     (void)AppManager::instance().registerApp("wardriving", createWardrivingApp);
+    (void)AppManager::instance().registerApp("blue_team", createBlueTeamApp);
 
     // ── Dynamic Plugin Loading ───────────────────────────────────────────
     {
