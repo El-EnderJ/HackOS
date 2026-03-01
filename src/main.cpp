@@ -59,6 +59,7 @@
 #include "core/power_manager.h"
 #include "core/state_machine.h"
 #include "core/stealth_manager.h"
+#include "core/module_detect.h"
 #include "core/system_core.h"
 #include "hardware/display.h"
 #include "hardware/input.h"
@@ -170,6 +171,14 @@ void setup()
         const size_t registered = pm.registerAll();
         ESP_LOGI(TAG, "Plugins: %u loaded, %u registered",
                  static_cast<unsigned>(loaded), static_cast<unsigned>(registered));
+    }
+
+    // ── Smart Module Auto-Discovery (Plug & Play) ────────────────────────
+    {
+        auto &modDetect = hackos::core::ModuleDetect::instance();
+        const size_t modsFound = modDetect.probeAll();
+        ESP_LOGI(TAG, "ModuleDetect: %u module(s) found",
+                 static_cast<unsigned>(modsFound));
     }
 
     // ── Stealth / lock-screen subsystem ─────────────────────────────────
