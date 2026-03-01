@@ -44,10 +44,13 @@ enum class GhostMsgType : uint8_t
 
 enum class GhostCmd : uint8_t
 {
-    NONE        = 0x00,
-    BLE_SPAM    = 0x01, ///< Start BLE advertising spam
-    WIFI_DEAUTH = 0x02, ///< Start WiFi deauth burst
-    STOP        = 0xFF, ///< Stop any running remote task
+    NONE         = 0x00,
+    BLE_SPAM     = 0x01, ///< Start BLE advertising spam
+    WIFI_DEAUTH  = 0x02, ///< Start WiFi deauth burst
+    BEACON_SPAM  = 0x03, ///< Start beacon flood on remote node
+    KARMA_ATTACK = 0x04, ///< Start Karma attack on remote node
+    PMKID_SCAN   = 0x05, ///< Start PMKID scan on remote node
+    STOP         = 0xFF, ///< Stop any running remote task
 };
 
 // ── Peer information ─────────────────────────────────────────────────────────
@@ -59,6 +62,7 @@ struct GhostPeer
     uint32_t lastSeenMs;    ///< millis() timestamp of last message
     char    name[16];       ///< Human-readable node name
     bool    active;         ///< Slot in use?
+    uint8_t role;           ///< 0=Node, 1=Master, 2=Decoy
 };
 
 // ── Wire-format header (fits within ESP-NOW 250-byte limit) ──────────────────
@@ -147,6 +151,22 @@ public:
     /// @brief Whether ESP-NOW is active.
     bool isActive() const { return initialized_; }
 
+    // ── Swarm role management ────────────────────────────────────────────
+
+    /// Swarm role constants.
+    static constexpr uint8_t ROLE_NODE   = 0U; ///< Standard node
+    static constexpr uint8_t ROLE_MASTER = 1U; ///< Swarm master
+    static constexpr uint8_t ROLE_DECOY  = 2U; ///< Decoy / sacrificial node
+
+    /// @brief Get the local node's swarm role.
+    uint8_t ownRole() const { return ownRole_; }
+
+    /// @brief Set the local node's swarm role.
+    void setOwnRole(uint8_t role) { ownRole_ = role; }
+
+    /// @brief Send a command to a specific peer by MAC address.
+    bool sendCommandTo(GhostCmd cmd, const uint8_t *peerMac);
+
 private:
     GhostNetManager();
 
@@ -177,6 +197,7 @@ private:
     uint8_t seqNo_;
     char nodeName_[16];
     uint8_t ownMac_[6];
+    uint8_t ownRole_;   ///< Swarm role (ROLE_NODE/ROLE_MASTER/ROLE_DECOY)
 
     GhostPeer peers_[MAX_PEERS];
 
