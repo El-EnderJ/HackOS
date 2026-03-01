@@ -48,6 +48,8 @@
 #include "apps/sd_updater_app.h"
 #include "apps/wifi_mastery_app.h"
 #include "apps/wardriving_app.h"
+#include "apps/blue_team_app.h"
+#include "apps/lua_app.h"
 #include "config.h"
 #include "core/app_manager.h"
 #include "core/event_system.h"
@@ -57,6 +59,7 @@
 #include "core/power_manager.h"
 #include "core/state_machine.h"
 #include "core/stealth_manager.h"
+#include "core/module_detect.h"
 #include "core/system_core.h"
 #include "hardware/display.h"
 #include "hardware/input.h"
@@ -158,6 +161,8 @@ void setup()
     (void)AppManager::instance().registerApp("sd_updater", createSDUpdaterApp);
     (void)AppManager::instance().registerApp("wifi_mastery", createWifiMasteryApp);
     (void)AppManager::instance().registerApp("wardriving", createWardrivingApp);
+    (void)AppManager::instance().registerApp("blue_team", createBlueTeamApp);
+    (void)AppManager::instance().registerApp("lua_scripts", createLuaApp);
 
     // ── Dynamic Plugin Loading ───────────────────────────────────────────
     {
@@ -166,6 +171,14 @@ void setup()
         const size_t registered = pm.registerAll();
         ESP_LOGI(TAG, "Plugins: %u loaded, %u registered",
                  static_cast<unsigned>(loaded), static_cast<unsigned>(registered));
+    }
+
+    // ── Smart Module Auto-Discovery (Plug & Play) ────────────────────────
+    {
+        auto &modDetect = hackos::core::ModuleDetect::instance();
+        const size_t modsFound = modDetect.probeAll();
+        ESP_LOGI(TAG, "ModuleDetect: %u module(s) found",
+                 static_cast<unsigned>(modsFound));
     }
 
     // ── Stealth / lock-screen subsystem ─────────────────────────────────

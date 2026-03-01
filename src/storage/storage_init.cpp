@@ -32,6 +32,7 @@ const char *const StorageInit::REQUIRED_DIRS[DIR_COUNT] = {
     "/ext/update",
     "/ext/pmkid",
     "/ext/wardriving",
+    "/ext/lua",
 };
 
 // ── Public API ───────────────────────────────────────────────────────────────
